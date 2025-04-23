@@ -1,7 +1,17 @@
-[project]
-name = "python-template"
+[tool.poetry]
+name = "discord-music-bot"
 version = "0.1.0"
-description = ""
-authors = ["Your Name <you@example.com>"]
-requires-python = ">=3.11"
-dependencies = []
+description = "Bot de música com Nextcord"
+authors = ["Seu Nome <seu@email.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+nextcord = "^2.6.0"
+pynacl = "^1.5.0"
+python-dotenv = "^1.0.1"
+yt-dlp = "^2024.4.9"
+flask = "^3.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
