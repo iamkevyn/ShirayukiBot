@@ -1,219 +1,139 @@
 import nextcord
-from nextcord.ext import commands
-from nextcord import Interaction, SlashOption, Embed, ui
-import yt_dlp
+from nextcord.ext import commands, tasks
+from nextcord import Interaction, SlashOption, Embed, ButtonStyle
+from nextcord.ui import View, Button
 import asyncio
-import requests
-import base64
-import random
+import yt_dlp
 import os
+import functools
+import datetime
 
-SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+YDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'noplaylist': True,
+    'quiet': True,
+    'cookiefile': 'cookies.txt',  # Usa cookies.txt
+    'default_search': 'ytsearch',
+    'extract_flat': 'in_playlist',
+    'source_address': '0.0.0.0',
+}
 
-class MusicView(ui.View):
-    def __init__(self, bot, interaction, musica_cog):
+class MusicButtonView(View):
+    def __init__(self, cog, interaction: Interaction):
         super().__init__(timeout=None)
-        self.bot = bot
+        self.cog = cog
         self.interaction = interaction
-        self.musica_cog = musica_cog
 
-    @ui.button(emoji="⏪", style=nextcord.ButtonStyle.secondary)
-    async def back(self, button: ui.Button, interaction: Interaction):
-        await self.musica_cog.previous(interaction)
+    @nextcord.ui.button(label="⏯ Pausar/Retomar", style=ButtonStyle.gray)
+    async def pause_resume(self, button: Button, interaction: Interaction):
+        vc = self.cog.get_voice_client(interaction.guild)
+        if vc.is_playing():
+            vc.pause()
+        elif vc.is_paused():
+            vc.resume()
+        await interaction.response.defer()
 
-    @ui.button(emoji="⏸", style=nextcord.ButtonStyle.secondary)
-    async def pause_resume(self, button: ui.Button, interaction: Interaction):
-        await self.musica_cog.toggle_pause(interaction)
+    @nextcord.ui.button(label="⏭ Pular", style=ButtonStyle.blurple)
+    async def skip(self, button: Button, interaction: Interaction):
+        vc = self.cog.get_voice_client(interaction.guild)
+        if vc.is_playing() or vc.is_paused():
+            vc.stop()
+        await interaction.response.defer()
 
-    @ui.button(emoji="⏭", style=nextcord.ButtonStyle.secondary)
-    async def skip(self, button: ui.Button, interaction: Interaction):
-        await self.musica_cog.skip(interaction)
-
-    @ui.button(emoji="🔁", style=nextcord.ButtonStyle.secondary)
-    async def loop(self, button: ui.Button, interaction: Interaction):
-        await self.musica_cog.toggle_loop(interaction)
-
-    @ui.button(emoji="🔀", style=nextcord.ButtonStyle.secondary)
-    async def shuffle(self, button: ui.Button, interaction: Interaction):
-        await self.musica_cog.shuffle(interaction)
-
-    @ui.button(emoji="⏹", style=nextcord.ButtonStyle.danger)
-    async def stop(self, button: ui.Button, interaction: Interaction):
-        await self.musica_cog.stop(interaction)
-
-class Musica(commands.Cog):
+class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.queue = {}
-        self.voice_clients = {}
-        self.is_playing = {}
-        self.current_song = {}
-        self.looping = {}
+        self.queues = {}
+        self.autoleave_check.start()
 
-    def search_yt(self, item):
-        ydl_opts = {
-            'format': 'bestaudio[ext=webm]/bestaudio/best',
-            'noplaylist': True,
-            'quiet': True,
-            'default_search': 'ytsearch5',
-            'cookiefile': 'cookies.txt',
-        }
+    def get_voice_client(self, guild):
+        return nextcord.utils.get(self.bot.voice_clients, guild=guild)
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    async def search_youtube(self, query):
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
             try:
-                info = ydl.extract_info(item, download=False)
-                entries = info['entries'] if 'entries' in info else [info]
-
-                for video in entries:
-                    if not video.get('is_live', False) and not video.get('was_live', False):
-                        if 'url' in video:
-                            return {
-                                'source': video['url'],
-                                'title': video['title'],
-                                'duration': video.get('duration', 0),
-                                'webpage_url': video['webpage_url']
-                            }
-                return None
+                info = ydl.extract_info(query, download=False)
+                if 'entries' in info:
+                    info = info['entries'][0]
+                return {'title': info['title'], 'url': info['url'], 'webpage_url': info['webpage_url']}
             except Exception as e:
-                print(f"[YT-DLP ERROR] {e}")
+                print(f"Erro ao buscar música: {e}")
                 return None
 
-    def get_spotify_tracks(self, url):
-        try:
-            token_url = "https://accounts.spotify.com/api/token"
-            credentials = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
-            b64_credentials = base64.b64encode(credentials.encode()).decode()
-            headers = {
-                "Authorization": f"Basic {b64_credentials}",
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            data = {"grant_type": "client_credentials"}
-            response = requests.post(token_url, headers=headers, data=data)
-            access_token = response.json()["access_token"]
+    async def play_next(self, ctx):
+        vc = self.get_voice_client(ctx.guild)
+        if not self.queues[ctx.guild.id]:
+            return
 
-            headers = {"Authorization": f"Bearer {access_token}"}
+        song = self.queues[ctx.guild.id].pop(0)
+        source = await self.prepare_source(song['url'])
 
-            if "track/" in url:
-                track_id = url.split("track/")[1].split("?")[0]
-                track_url = f"https://api.spotify.com/v1/tracks/{track_id}"
-                track_info = requests.get(track_url, headers=headers).json()
-                name = track_info["name"]
-                artists = ", ".join(artist["name"] for artist in track_info["artists"])
-                return [f"{name} {artists}"]
+        def after_playing(err):
+            if err:
+                print(f"Erro ao tocar: {err}")
+            fut = self.play_next(ctx)
+            asyncio.run_coroutine_threadsafe(fut, self.bot.loop)
 
-            elif "playlist/" in url:
-                playlist_id = url.split("playlist/")[1].split("?")[0]
-                playlist_url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
-                response = requests.get(playlist_url, headers=headers).json()
-                return [f"{item['track']['name']} {', '.join(artist['name'] for artist in item['track']['artists'])}" for item in response['items'] if item['track']]
+        vc.play(source, after=after_playing)
 
-        except Exception as e:
-            print(f"[SPOTIFY ERROR] {e}")
-            return []
+    async def prepare_source(self, url):
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(url, download=False))
+        return nextcord.FFmpegPCMAudio(data['url'])
 
-    async def play_music(self, interaction: Interaction):
-        guild_id = interaction.guild.id
-        if guild_id in self.queue and self.queue[guild_id]:
-            song = self.queue[guild_id][0] if self.looping.get(guild_id) else self.queue[guild_id].pop(0)
-            self.current_song[guild_id] = song
-            self.is_playing[guild_id] = True
-            vc = self.voice_clients[guild_id]
-
-            vc.play(nextcord.PCMVolumeTransformer(nextcord.FFmpegPCMAudio(song['source'])),
-                    after=lambda e: asyncio.run_coroutine_threadsafe(self.play_music(interaction), self.bot.loop))
-
-            embed = Embed(title="🎶 MUSIC PANEL", color=0x7289DA)
-            embed.add_field(name="📌 Música", value=f"[{song['title']}]({song['webpage_url']})", inline=False)
-            embed.add_field(name="⏱ Duração", value=f"{song['duration'] // 60}m {song['duration'] % 60}s", inline=True)
-            embed.add_field(name="🎧 Requisitado por", value=interaction.user.mention, inline=True)
-            await interaction.followup.send(embed=embed, view=MusicView(self.bot, interaction, self))
-        else:
-            self.is_playing[guild_id] = False
-            await interaction.followup.send("🎶 A fila acabou!")
-
-    @nextcord.slash_command(name="play", description="Toca uma música (YouTube ou Spotify)")
-    async def play(self, interaction: Interaction, query: str = SlashOption(description="Link ou nome da música")):
+    @commands.slash_command(name="tocar", description="Toca uma música do YouTube ou Spotify")
+    async def tocar(self, interaction: Interaction, query: str = SlashOption(description="Nome ou link da música")):
         await interaction.response.defer()
-        guild_id = interaction.guild.id
-        if not interaction.user.voice:
-            await interaction.followup.send("Você precisa estar em um canal de voz!", ephemeral=True)
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.followup.send("Você precisa estar em um canal de voz!")
             return
 
-        tracks = []
-        if "open.spotify.com/" in query:
-            tracks = self.get_spotify_tracks(query)
-            if not tracks:
-                await interaction.followup.send("Erro ao buscar no Spotify.", ephemeral=True)
-                return
-        else:
-            tracks = [query]
+        vc = self.get_voice_client(interaction.guild)
+        if not vc:
+            vc = await interaction.user.voice.channel.connect()
+            self.queues[interaction.guild.id] = []
 
-        added = []
-        for q in tracks:
-            song = self.search_yt(q)
-            if song:
-                self.queue.setdefault(guild_id, []).append(song)
-                added.append(song['title'])
-
-        if not added:
-            await interaction.followup.send("Nenhuma música válida encontrada!", ephemeral=True)
+        song = await self.search_youtube(query)
+        if not song:
+            await interaction.followup.send("Não encontrei a música.")
             return
 
-        if guild_id not in self.voice_clients or not self.voice_clients[guild_id].is_connected():
-            channel = interaction.user.voice.channel
-            vc = await channel.connect()
-            self.voice_clients[guild_id] = vc
-            await self.play_music(interaction)
-        elif not self.is_playing.get(guild_id, False):
-            await self.play_music(interaction)
-        else:
-            await interaction.followup.send(f"Adicionadas: **{', '.join(added)}** à fila!")
+        self.queues[interaction.guild.id].append(song)
+        embed = Embed(title="🎶 Adicionada à fila", description=f"[{song['title']}]({song['webpage_url']})", color=0x1DB954)
+        view = MusicButtonView(self, interaction)
 
-    async def toggle_pause(self, interaction: Interaction):
-        guild_id = interaction.guild.id
-        vc = self.voice_clients.get(guild_id)
-        if vc:
-            if vc.is_playing():
-                vc.pause()
-                await interaction.response.send_message("⏸ Música pausada.", ephemeral=True)
-            elif vc.is_paused():
-                vc.resume()
-                await interaction.response.send_message("▶ Música retomada.", ephemeral=True)
+        if not vc.is_playing() and not vc.is_paused():
+            await self.play_next(interaction)
 
-    async def skip(self, interaction: Interaction):
-        guild_id = interaction.guild.id
-        vc = self.voice_clients.get(guild_id)
-        if vc and vc.is_playing():
-            vc.stop()
-            await interaction.response.send_message("⏭ Pulando música...", ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view)
 
-    async def previous(self, interaction: Interaction):
-        await interaction.response.send_message("🔙 Voltar ainda não implementado.", ephemeral=True)
+    @commands.slash_command(name="fila", description="Mostra a fila de reprodução")
+    async def fila(self, interaction: Interaction):
+        queue = self.queues.get(interaction.guild.id, [])
+        if not queue:
+            await interaction.response.send_message("A fila está vazia.")
+            return
 
-    async def toggle_loop(self, interaction: Interaction):
-        guild_id = interaction.guild.id
-        self.looping[guild_id] = not self.looping.get(guild_id, False)
-        estado = "ativado" if self.looping[guild_id] else "desativado"
-        await interaction.response.send_message(f"🔁 Loop {estado}.", ephemeral=True)
+        embed = Embed(title="📜 Fila de músicas", color=0x1DB954)
+        for i, song in enumerate(queue, start=1):
+            embed.add_field(name=f"{i}.", value=f"[{song['title']}]({song['webpage_url']})", inline=False)
+        await interaction.response.send_message(embed=embed)
 
-    async def shuffle(self, interaction: Interaction):
-        guild_id = interaction.guild.id
-        if guild_id in self.queue and len(self.queue[guild_id]) > 1:
-            random.shuffle(self.queue[guild_id])
-            await interaction.response.send_message("🔀 Fila embaralhada!", ephemeral=True)
-        else:
-            await interaction.response.send_message("Fila vazia ou com apenas uma música.", ephemeral=True)
-
-    async def stop(self, interaction: Interaction):
-        guild_id = interaction.guild.id
-        vc = self.voice_clients.get(guild_id)
-        if vc:
-            vc.stop()
-            await vc.disconnect()
-        self.queue[guild_id] = []
-        self.is_playing[guild_id] = False
-        await interaction.response.send_message("⏹ Música parada e desconectado.", ephemeral=True)
+    @tasks.loop(minutes=1)
+    async def autoleave_check(self):
+        for vc in self.bot.voice_clients:
+            if not vc.is_playing() and not vc.is_paused():
+                guild_id = vc.guild.id
+                if hasattr(vc, "idle_since"):
+                    if (datetime.datetime.utcnow() - vc.idle_since).seconds > 900:
+                        await vc.disconnect()
+                        print(f"Saindo automaticamente do canal em {vc.guild.name}")
+                        self.queues.pop(guild_id, None)
+                else:
+                    vc.idle_since = datetime.datetime.utcnow()
+            else:
+                if hasattr(vc, "idle_since"):
+                    del vc.idle_since
 
 def setup(bot):
-    bot.add_cog(Musica(bot))
+    bot.add_cog(Music(bot))
