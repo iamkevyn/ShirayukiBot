@@ -1,4 +1,4 @@
-nextcord
+nextcord==2.6.0
 yt-dlp
 ffmpeg-python
 PyNaCl
@@ -6,5 +6,5 @@ python-dotenv
 flask
 setuptools>=65.5.0
 psutil
-ffmpeg-python
-nextcord==2.6.0
+aiohttp
+spotipy
