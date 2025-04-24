@@ -74,20 +74,16 @@ class Musica(commands.Cog):
                                 'duration': video.get('duration', 0),
                                 'webpage_url': video['webpage_url']
                             }
-
-                print("[YT-DLP ERROR] Nenhum vídeo sem DRM encontrado.")
                 return None
-
             except Exception as e:
                 print(f"[YT-DLP ERROR] {e}")
                 return None
 
-    def get_spotify_track_name(self, url):
+    def get_spotify_tracks(self, url):
         try:
             token_url = "https://accounts.spotify.com/api/token"
             credentials = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
             b64_credentials = base64.b64encode(credentials.encode()).decode()
-
             headers = {
                 "Authorization": f"Basic {b64_credentials}",
                 "Content-Type": "application/x-www-form-urlencoded"
@@ -96,17 +92,25 @@ class Musica(commands.Cog):
             response = requests.post(token_url, headers=headers, data=data)
             access_token = response.json()["access_token"]
 
-            track_id = url.split("track/")[1].split("?")[0]
-            track_url = f"https://api.spotify.com/v1/tracks/{track_id}"
             headers = {"Authorization": f"Bearer {access_token}"}
-            track_info = requests.get(track_url, headers=headers).json()
 
-            name = track_info["name"]
-            artists = ", ".join(artist["name"] for artist in track_info["artists"])
-            return f"{name} {artists}"
+            if "track/" in url:
+                track_id = url.split("track/")[1].split("?")[0]
+                track_url = f"https://api.spotify.com/v1/tracks/{track_id}"
+                track_info = requests.get(track_url, headers=headers).json()
+                name = track_info["name"]
+                artists = ", ".join(artist["name"] for artist in track_info["artists"])
+                return [f"{name} {artists}"]
+
+            elif "playlist/" in url:
+                playlist_id = url.split("playlist/")[1].split("?")[0]
+                playlist_url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
+                response = requests.get(playlist_url, headers=headers).json()
+                return [f"{item['track']['name']} {', '.join(artist['name'] for artist in item['track']['artists'])}" for item in response['items'] if item['track']]
+
         except Exception as e:
             print(f"[SPOTIFY ERROR] {e}")
-            return None
+            return []
 
     async def play_music(self, interaction: Interaction):
         guild_id = interaction.guild.id
@@ -123,12 +127,12 @@ class Musica(commands.Cog):
             embed.add_field(name="📌 Música", value=f"[{song['title']}]({song['webpage_url']})", inline=False)
             embed.add_field(name="⏱ Duração", value=f"{song['duration'] // 60}m {song['duration'] % 60}s", inline=True)
             embed.add_field(name="🎧 Requisitado por", value=interaction.user.mention, inline=True)
-            await interaction.channel.send(embed=embed, view=MusicView(self.bot, interaction, self))
+            await interaction.followup.send(embed=embed, view=MusicView(self.bot, interaction, self))
         else:
             self.is_playing[guild_id] = False
-            await interaction.channel.send("🎶 A fila acabou!")
+            await interaction.followup.send("🎶 A fila acabou!")
 
-    @nextcord.slash_command(name="play", description="Toca uma música (YouTube ou nome)")
+    @nextcord.slash_command(name="play", description="Toca uma música (YouTube ou Spotify)")
     async def play(self, interaction: Interaction, query: str = SlashOption(description="Link ou nome da música")):
         await interaction.response.defer()
         guild_id = interaction.guild.id
@@ -136,20 +140,25 @@ class Musica(commands.Cog):
             await interaction.followup.send("Você precisa estar em um canal de voz!", ephemeral=True)
             return
 
-        if "open.spotify.com/track/" in query:
-            query = self.get_spotify_track_name(query)
-            if not query:
-                await interaction.followup.send("Erro ao buscar música no Spotify.", ephemeral=True)
+        tracks = []
+        if "open.spotify.com/" in query:
+            tracks = self.get_spotify_tracks(query)
+            if not tracks:
+                await interaction.followup.send("Erro ao buscar no Spotify.", ephemeral=True)
                 return
+        else:
+            tracks = [query]
 
-        song = self.search_yt(query)
-        if not song:
-            await interaction.followup.send("Música não encontrada ou protegida por DRM!", ephemeral=True)
+        added = []
+        for q in tracks:
+            song = self.search_yt(q)
+            if song:
+                self.queue.setdefault(guild_id, []).append(song)
+                added.append(song['title'])
+
+        if not added:
+            await interaction.followup.send("Nenhuma música válida encontrada!", ephemeral=True)
             return
-
-        if guild_id not in self.queue:
-            self.queue[guild_id] = []
-        self.queue[guild_id].append(song)
 
         if guild_id not in self.voice_clients or not self.voice_clients[guild_id].is_connected():
             channel = interaction.user.voice.channel
@@ -159,7 +168,7 @@ class Musica(commands.Cog):
         elif not self.is_playing.get(guild_id, False):
             await self.play_music(interaction)
         else:
-            await interaction.followup.send(f"**{song['title']}** adicionada à fila!")
+            await interaction.followup.send(f"Adicionadas: **{', '.join(added)}** à fila!")
 
     async def toggle_pause(self, interaction: Interaction):
         guild_id = interaction.guild.id
