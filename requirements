@@ -4,4 +4,4 @@ ffmpeg-python
 PyNaCl
 python-dotenv
 flask
-setuptools
+setuptools>=65.5.0
