@@ -1,7 +1,8 @@
-import nextcord
-from nextcord.ext import commands
-from nextcord import Interaction, Embed
 import random
+
+import nextcord
+from nextcord import Interaction, Embed
+from nextcord.ext import commands
 
 INTERACTION_GIFS = {
     "hug": [
