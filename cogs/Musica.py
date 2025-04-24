@@ -1,11 +1,12 @@
-import nextcord
-from nextcord.ext import commands, tasks
-from nextcord import Interaction, Embed, SlashOption, ButtonStyle
-from nextcord.ui import View, Button
-import yt_dlp
 import os
 import asyncio
 import datetime
+import random
+import nextcord
+from nextcord import Interaction, Embed, ButtonStyle
+from nextcord.ui import View, Button
+from nextcord.ext import commands, tasks
+import yt_dlp
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
