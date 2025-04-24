@@ -20,15 +20,15 @@ intents.guilds = True
 intents.members = True
 intents.voice_states = True
 
-# Usar InteractionBot para suportar comandos slash
-bot = nextcord.InteractionBot(intents=intents)
+# Criação do bot usando commands.Bot (suporta slash commands também)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
     print(f"✅ {bot.user.name} está online!")
 
     try:
-        synced = await bot.sync_all_application_commands()
+        synced = await bot.sync_application_commands()
         print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
     except Exception as e:
         print(f"❌ Erro ao sincronizar comandos slash: {e}")
