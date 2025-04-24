@@ -1,4 +1,5 @@
 #!/bin/bash
 pip install --upgrade setuptools
-python main.py
+pip install -r requirements.txt  # (se estiver usando um)
 pip install psutil
+python main.py
