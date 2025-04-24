@@ -1,13 +1,13 @@
 import os
-import nextcord
-from nextcord.ext import commands
-from nextcord import Interaction, SlashOption, Embed, ui
 import random
 import secrets
 import math
+import asyncio  # Correção aqui: era `import async`, o que é inválido
 import aiohttp
-import asyncio
-
+import nextcord
+from nextcord import Interaction, Embed
+from nextcord.ext import commands
+from nextcord import ui
 class SugestaoModal(ui.Modal):
     def __init__(self):
         super().__init__("Sugestão para o bot")
