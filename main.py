@@ -7,13 +7,6 @@ from dotenv import load_dotenv
 load_dotenv()
 keep_alive()
 
-# Carrega o Opus se necessário
-if not nextcord.opus.is_loaded():
-    try:
-        nextcord.opus.load_opus('opus')  # No Replit, talvez precise mudar pra apenas 'opus'
-    except Exception as e:
-        print(f"Erro ao carregar Opus: {e}")
-
 intents = nextcord.Intents.default()
 intents.message_content = True
 intents.guilds = True
