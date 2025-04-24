@@ -1,31 +1,51 @@
 import os
 import nextcord
 from nextcord.ext import commands
-from keep_alive import keep_alive
 from dotenv import load_dotenv
 
-load_dotenv()
-keep_alive()
+# Se estiver usando Replit ou similar:
+try:
+    from keep_alive import keep_alive
+    keep_alive()
+except ImportError:
+    print("🔁 Módulo 'keep_alive' não encontrado, ignorando...")
 
+# Carregar variáveis de ambiente
+load_dotenv()
+
+# Intents necessários
 intents = nextcord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.members = True
 intents.voice_states = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+# Usar InteractionBot para suportar comandos slash
+bot = nextcord.InteractionBot(intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user.name} está online!")
+    print(f"✅ {bot.user.name} está online!")
 
-# Carrega todos os COGs da pasta cogs
+    try:
+        synced = await bot.sync_all_application_commands()
+        print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
+    except Exception as e:
+        print(f"❌ Erro ao sincronizar comandos slash: {e}")
+
+# Carregamento dinâmico dos COGs
 for filename in os.listdir("./cogs"):
     if filename.endswith(".py"):
+        cog_path = f"cogs.{filename[:-3]}"
         try:
-            bot.load_extension(f"cogs.{filename[:-3]}")
+            bot.load_extension(cog_path)
             print(f"✅ COG carregado: {filename}")
         except Exception as e:
             print(f"❌ Erro ao carregar {filename}: {e}")
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+# Inicia o bot com o token da variável de ambiente
+token = os.getenv("DISCORD_TOKEN")
+if token:
+    bot.run(token)
+else:
+    print("❌ Token do bot não encontrado! Verifique seu arquivo .env.")
