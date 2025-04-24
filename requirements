@@ -5,3 +5,4 @@ PyNaCl
 python-dotenv
 flask
 setuptools>=65.5.0
+psutil
