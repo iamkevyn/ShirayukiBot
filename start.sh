@@ -1,4 +1,5 @@
 #!/bin/bash
+pip install spotipy
 pip install -U nextcord
 pip install nextcord yt-dlp requests
 pip install --upgrade setuptools
