@@ -88,7 +88,7 @@ class JogosExtras(commands.Cog):
         palavras = ["python", "discord", "anime", "programacao", "bot"]
         palavra = random.choice(palavras)
         exibida = ["_" for _ in palavra]
-        await interaction.response.send_message(f"A palavra é: {' '.join(exibida)}
+        await interaction.response.send_message(f"A palavra é: {' '.join(exibida)}")
 (⚠ Este jogo ainda está em construção.)")
 
     @nextcord.slash_command(name="pedra_papel_tesoura", description="Jogue Pedra, Papel ou Tesoura!")
