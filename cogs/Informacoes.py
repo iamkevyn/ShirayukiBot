@@ -1,22 +1,22 @@
 import platform
 import psutil
 import datetime
-
 import nextcord
-from nextcord import Interaction, Embed
 from nextcord.ext import commands
+from nextcord import Interaction, Embed
+from nextcord.ui import View, Select
 
 CRIADOR_ID = 1278842453159444582
 DATA_CRIACAO = "22 de Abril de 2025"
 PRIMEIRO_SERVIDOR = "Jardim Secreto"
 SLOGAN = "Um Bot Para A Vida!"
 
-class InfoView(ui.View):
+class InfoView(View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(InfoSelect())
 
-class InfoSelect(ui.Select):
+class InfoSelect(Select):
     def __init__(self):
         options = [
             nextcord.SelectOption(label="Sobre o Bot", description="Informações gerais"),
@@ -33,12 +33,15 @@ class InfoSelect(ui.Select):
 
     async def callback(self, interaction: Interaction):
         label = self.values[0]
+        embed = None
+
         if label == "Sobre o Bot":
             embed = Embed(title="🤖 Sobre o Bot", description=SLOGAN, color=0x00BFFF)
             embed.add_field(name="📅 Criado em", value=DATA_CRIACAO, inline=True)
             embed.add_field(name="🛡️ Primeiro servidor", value=PRIMEIRO_SERVIDOR, inline=True)
-            embed.add_field(name="👤 Criador", value=f"<@{1278842453159444582}>", inline=True)
+            embed.add_field(name="👤 Criador", value=f"<@{CRIADOR_ID}>", inline=True)
             embed.set_footer(text="Obrigado por usar o bot! 💙")
+
         elif label == "Usuário":
             user = interaction.user
             embed = Embed(title="👤 Informações do Usuário", color=0x3498db)
@@ -47,6 +50,7 @@ class InfoSelect(ui.Select):
             embed.add_field(name="ID", value=user.id, inline=True)
             embed.add_field(name="Criador?", value="Sim" if user.id == CRIADOR_ID else "Não", inline=True)
             embed.set_footer(text="Legal te ver por aqui!")
+
         elif label == "Servidor":
             guild = interaction.guild
             embed = Embed(title="🌐 Informações do Servidor", color=0x2ecc71)
@@ -58,6 +62,7 @@ class InfoSelect(ui.Select):
             embed.add_field(name="Impulsos", value=guild.premium_subscription_count or 0, inline=True)
             embed.add_field(name="Nível de Impulso", value=str(guild.premium_tier), inline=True)
             embed.set_footer(text="Servidor incrível!")
+
         elif label == "Sistema do Bot":
             memory = psutil.virtual_memory()
             cpu = psutil.cpu_percent()
@@ -67,22 +72,26 @@ class InfoSelect(ui.Select):
             embed.add_field(name="Uso de CPU", value=f"{cpu}%", inline=True)
             embed.add_field(name="Uso de RAM", value=f"{memory.percent}%", inline=True)
             embed.set_footer(text="Monitoramento em tempo real.")
+
         elif label == "Avatar":
             user = interaction.user
             avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
             embed = Embed(title=f"🖼️ Avatar de {user.name}", color=0x9b59b6)
             embed.set_image(url=avatar_url)
+
         elif label == "Uptime":
             now = datetime.datetime.utcnow()
             delta = now - interaction.client.get_cog("Informacoes").start_time
             hours, remainder = divmod(int(delta.total_seconds()), 3600)
             minutes, seconds = divmod(remainder, 60)
             embed = Embed(title="⏱️ Uptime do Bot", description=f"{hours}h {minutes}m {seconds}s", color=0xf39c12)
+
         elif label == "Cargos":
             user = interaction.user
             roles = [role.mention for role in user.roles if role.name != "@everyone"]
             roles_str = ", ".join(roles) if roles else "Nenhum cargo."
             embed = Embed(title=f"👥 Cargos de {user.display_name}", description=roles_str, color=0xe67e22)
+
         elif label == "Banner":
             user = await interaction.client.fetch_user(interaction.user.id)
             embed = Embed(title=f"🖼️ Banner de {user.name}", color=0x1abc9c)
@@ -90,6 +99,7 @@ class InfoSelect(ui.Select):
                 embed.set_image(url=user.banner.url)
             else:
                 embed.description = "❌ Esse usuário não possui um banner."
+
         elif label == "Emojis":
             guild = interaction.guild
             if not guild.emojis:
@@ -98,7 +108,7 @@ class InfoSelect(ui.Select):
                 emoji_list = " ".join(str(emoji) for emoji in guild.emojis[:50])
                 embed = Embed(title="😀 Emojis do servidor", description=emoji_list, color=0x95a5a6)
 
-        await interaction.response.edit_message(embed=embed, view=self.view)
+        await interaction.response.edit_message(embed=embed, view=InfoView())
 
 class Informacoes(commands.Cog):
     def __init__(self, bot):
