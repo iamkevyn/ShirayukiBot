@@ -150,6 +150,7 @@ class Interacoes(commands.Cog):
             if not hasattr(self, name):
                 self.add_command(name, f"{self.verb(name).capitalize()} um usuário")
 
-
 def setup(bot):
-    bot.add_cog(Interacoes(bot))
+    cog = Interacoes(bot)
+    bot.add_cog(cog)
+    cog.cog_load()
