@@ -1,5 +1,4 @@
-# COG Utilitários com 12 comandos úteis
-
+import os
 import nextcord
 from nextcord.ext import commands
 from nextcord import Interaction, SlashOption, Embed, ui
@@ -7,6 +6,7 @@ import random
 import secrets
 import math
 import aiohttp
+import asyncio
 
 class SugestaoModal(ui.Modal):
     def __init__(self):
@@ -29,7 +29,7 @@ class SugestaoModal(ui.Modal):
 class Utilitarios(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.quotes = [
+        self.quotes = [  # 25 citações
             "A persistência realiza o impossível.",
             "O sucesso é a soma de pequenos esforços repetidos todos os dias.",
             "Não sabendo que era impossível, foi lá e fez.",
@@ -56,8 +56,7 @@ class Utilitarios(commands.Cog):
             "A ação é o antídoto do medo.",
             "Você não precisa ser perfeito, só persistente."
         ]
-
-        self.curiosidades = [
+        self.curiosidades = [  # 25 curiosidades
             "Polvos têm três corações e sangue azul.",
             "O corpo humano brilha no escuro (mas nossos olhos não percebem).",
             "O mel nunca estraga.",
@@ -96,6 +95,9 @@ class Utilitarios(commands.Cog):
     @commands.slash_command(name="clima", description="Mostra o clima atual de uma cidade.")
     async def clima(self, interaction: Interaction, cidade: str):
         api_key = os.getenv("OPENWEATHER_API")
+        if not api_key:
+            await interaction.response.send_message("❌ API de clima não configurada.")
+            return
         url = f"https://api.openweathermap.org/data/2.5/weather?q={cidade}&appid={api_key}&units=metric&lang=pt_br"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as r:
@@ -139,19 +141,33 @@ class Utilitarios(commands.Cog):
             botoes.add_item(btn)
         await interaction.response.send_message(embed=embed, view=botoes)
 
-    @commands.slash_command(name="github", description="Mostra info de um repositório do GitHub")
-    async def github(self, interaction: Interaction, repositorio: str):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://api.github.com/repos/{repositorio}") as r:
-                if r.status != 200:
-                    await interaction.response.send_message("❌ Repositório não encontrado.")
-                    return
-                data = await r.json()
-                embed = Embed(title=data['full_name'], description=data['description'], url=data['html_url'], color=0x3333ff)
-                embed.add_field(name="⭐ Stars", value=data['stargazers_count'])
-                embed.add_field(name="🔀 Forks", value=data['forks_count'])
-                embed.set_footer(text="GitHub")
-                await interaction.response.send_message(embed=embed)
+    @commands.slash_command(name="quote", description="Receba uma citação aleatória")
+    async def quote(self, interaction: Interaction):
+        await interaction.response.send_message(f"📜 *{random.choice(self.quotes)}*")
+
+    @commands.slash_command(name="curiosidade", description="Veja uma curiosidade aleatória")
+    async def curiosidade(self, interaction: Interaction):
+        await interaction.response.send_message(f"🧠 {random.choice(self.curiosidades)}")
+
+    @commands.slash_command(name="sugestao", description="Envie uma sugestão para o bot")
+    async def sugestao(self, interaction: Interaction):
+        await interaction.response.send_modal(SugestaoModal())
+
+    @commands.slash_command(name="numero_aleatorio", description="Gera um número entre dois valores")
+    async def numero_aleatorio(self, interaction: Interaction, minimo: int, maximo: int):
+        if minimo >= maximo:
+            await interaction.response.send_message("⚠️ O mínimo deve ser menor que o máximo.")
+        else:
+            await interaction.response.send_message(f"🎲 Número gerado: {random.randint(minimo, maximo)}")
+
+    @commands.slash_command(name="senha", description="Gera uma senha aleatória segura")
+    async def senha(self, interaction: Interaction, tamanho: int = 12):
+        if tamanho < 4 or tamanho > 32:
+            await interaction.response.send_message("Escolha um tamanho entre 4 e 32 caracteres.")
+            return
+        caracteres = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()"
+        senha = ''.join(secrets.choice(caracteres) for _ in range(tamanho))
+        await interaction.response.send_message(f"🔐 Sua senha gerada: `{senha}`")
 
     @commands.slash_command(name="contagem", description="Faz uma contagem regressiva")
     async def contagem(self, interaction: Interaction, segundos: int):
@@ -165,33 +181,19 @@ class Utilitarios(commands.Cog):
         await asyncio.sleep(1)
         await msg.edit(content="🎉 Tempo encerrado!")
 
-    @commands.slash_command(name="quote", description="Receba uma citação aleatória")
-    async def quote(self, interaction: Interaction):
-        await interaction.response.send_message(f"📜 *{random.choice(self.quotes)}*")
-
-    @commands.slash_command(name="numero_aleatorio", description="Gera um número entre dois valores")
-    async def numero_aleatorio(self, interaction: Interaction, minimo: int, maximo: int):
-        if minimo >= maximo:
-            await interaction.response.send_message("⚠️ O mínimo deve ser menor que o máximo.")
-        else:
-            await interaction.response.send_message(f"🎲 Número gerado: {random.randint(minimo, maximo)}")
-
-    @commands.slash_command(name="sugestao", description="Envie uma sugestão para o bot")
-    async def sugestao(self, interaction: Interaction):
-        await interaction.response.send_modal(SugestaoModal())
-
-    @commands.slash_command(name="senha", description="Gera uma senha aleatória segura")
-    async def senha(self, interaction: Interaction, tamanho: int = 12):
-        if tamanho < 4 or tamanho > 32:
-            await interaction.response.send_message("Escolha um tamanho entre 4 e 32 caracteres.")
-            return
-        caracteres = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()"
-        senha = ''.join(secrets.choice(caracteres) for _ in range(tamanho))
-        await interaction.response.send_message(f"🔐 Sua senha gerada: `{senha}`")
-
-    @commands.slash_command(name="curiosidade", description="Veja uma curiosidade aleatória")
-    async def curiosidade(self, interaction: Interaction):
-        await interaction.response.send_message(f"🧠 {random.choice(self.curiosidades)}")
+    @commands.slash_command(name="github", description="Mostra info de um repositório do GitHub")
+    async def github(self, interaction: Interaction, repositorio: str):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://api.github.com/repos/{repositorio}") as r:
+                if r.status != 200:
+                    await interaction.response.send_message("❌ Repositório não encontrado.")
+                    return
+                data = await r.json()
+                embed = Embed(title=data['full_name'], description=data['description'], url=data['html_url'], color=0x3333ff)
+                embed.add_field(name="⭐ Stars", value=data['stargazers_count'])
+                embed.add_field(name="🔀 Forks", value=data['forks_count'])
+                embed.set_footer(text="GitHub")
+                await interaction.response.send_message(embed=embed)
 
 def setup(bot):
     bot.add_cog(Utilitarios(bot))
