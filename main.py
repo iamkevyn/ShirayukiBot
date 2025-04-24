@@ -10,7 +10,7 @@ keep_alive()
 # Carrega o Opus se necessário
 if not nextcord.opus.is_loaded():
     try:
-        nextcord.opus.load_opus('libopus.so')  # No Replit, talvez precise mudar pra "opus"
+        nextcord.opus.load_opus('opus)  # No Replit, talvez precise mudar pra "opus"
     except Exception as e:
         print(f"Erro ao carregar Opus: {e}")
 
