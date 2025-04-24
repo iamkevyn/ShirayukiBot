@@ -1,9 +1,10 @@
-import nextcord
-from nextcord.ext import commands
-from nextcord import Interaction, Embed, SlashOption, ui
 import platform
 import psutil
 import datetime
+
+import nextcord
+from nextcord import Interaction, Embed
+from nextcord.ext import commands
 
 CRIADOR_ID = 1278842453159444582
 DATA_CRIACAO = "22 de Abril de 2025"
