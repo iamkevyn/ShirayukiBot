@@ -1,7 +1,7 @@
 import nextcord
 from nextcord import Interaction, Embed, ButtonStyle, SlashOption
 from nextcord.ui import View, Button
-from nextcord.ext import commands, application_commands
+from nextcord.ext import commands
 import random
 import sqlite3
 import asyncio
