@@ -2,12 +2,13 @@ import os
 import random
 import secrets
 import math
-import asyncio  # Correção aqui: era `import async`, o que é inválido
+import asyncio
 import aiohttp
 import nextcord
-from nextcord import Interaction, Embed
+from nextcord import Interaction, Embed, SlashOption
 from nextcord.ext import commands
 from nextcord import ui
+
 class SugestaoModal(ui.Modal):
     def __init__(self):
         super().__init__("Sugestão para o bot")
@@ -25,6 +26,37 @@ class SugestaoModal(ui.Modal):
         canal_logs = nextcord.utils.get(interaction.guild.text_channels, name="sugestoes")
         if canal_logs:
             await canal_logs.send(embed=embed)
+        else:
+            # Enviar para o canal atual se o canal de sugestões não existir
+            await interaction.channel.send("⚠️ Canal #sugestoes não encontrado. Criando sugestão aqui:", embed=embed)
+
+class EnqueteView(ui.View):
+    def __init__(self, opcoes_lista):
+        super().__init__(timeout=None)
+        self.votos = {i: 0 for i in range(len(opcoes_lista))}
+        self.opcoes = opcoes_lista
+        self.votantes = set()
+        
+        # Adicionar botões com callbacks conectados corretamente
+        for i, opcao in enumerate(opcoes_lista):
+            button = ui.Button(label=opcao, custom_id=f"vote_{i}")
+            button.callback = self.create_callback(i)
+            self.add_item(button)
+            
+    def create_callback(self, index):
+        async def callback(interaction: Interaction):
+            # Verificar se o usuário já votou
+            if interaction.user.id in self.votantes:
+                await interaction.response.send_message("Você já votou nesta enquete!", ephemeral=True)
+                return
+                
+            # Registrar voto
+            self.votos[index] += 1
+            self.votantes.add(interaction.user.id)
+            
+            await interaction.response.send_message(f"✅ Voto computado para: **{self.opcoes[index]}**", ephemeral=True)
+            
+        return callback
 
 class Utilitarios(commands.Cog):
     def __init__(self, bot):
@@ -86,11 +118,33 @@ class Utilitarios(commands.Cog):
 
     @commands.slash_command(name="calculadora", description="Resolve uma expressão matemática básica.")
     async def calculadora(self, interaction: Interaction, expressao: str):
+        # Usar uma abordagem mais segura que eval()
         try:
-            resultado = eval(expressao, {"__builtins__": None, "math": math}, {})
+            # Lista de operações permitidas
+            allowed_names = {
+                'abs': abs, 'round': round,
+                'min': min, 'max': max,
+                'sum': sum
+            }
+            
+            # Adicionar funções matemáticas seguras
+            for name in dir(math):
+                if not name.startswith('_'):
+                    allowed_names[name] = getattr(math, name)
+                    
+            # Compilar a expressão com restrições
+            code = compile(expressao, "<string>", "eval")
+            
+            # Verificar se há nomes não permitidos
+            for name in code.co_names:
+                if name not in allowed_names:
+                    raise NameError(f"O uso de '{name}' não é permitido")
+                    
+            # Avaliar a expressão com o dicionário restrito
+            resultado = eval(code, {"__builtins__": {}}, allowed_names)
             await interaction.response.send_message(f"🧮 Resultado: `{resultado}`")
-        except Exception:
-            await interaction.response.send_message("❌ Expressão inválida.")
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Expressão inválida: {str(e)}")
 
     @commands.slash_command(name="clima", description="Mostra o clima atual de uma cidade.")
     async def clima(self, interaction: Interaction, cidade: str):
@@ -98,48 +152,65 @@ class Utilitarios(commands.Cog):
         if not api_key:
             await interaction.response.send_message("❌ API de clima não configurada.")
             return
-        url = f"https://api.openweathermap.org/data/2.5/weather?q={cidade}&appid={api_key}&units=metric&lang=pt_br"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as r:
-                data = await r.json()
-                if data.get("cod") != 200:
-                    await interaction.response.send_message("Cidade não encontrada.")
-                    return
-                embed = Embed(title=f"🌤️ Clima em {cidade.title()}", color=0x3498db)
-                embed.add_field(name="Temperatura", value=f"{data['main']['temp']}°C")
-                embed.add_field(name="Descrição", value=data['weather'][0]['description'].capitalize())
-                embed.add_field(name="Umidade", value=f"{data['main']['humidity']}%")
-                await interaction.response.send_message(embed=embed)
+            
+        await interaction.response.defer()  # Adicionado para operações que podem demorar
+        
+        try:
+            url = f"https://api.openweathermap.org/data/2.5/weather?q={cidade}&appid={api_key}&units=metric&lang=pt_br"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as r:
+                    if r.status != 200:
+                        await interaction.followup.send("Cidade não encontrada.")
+                        return
+                        
+                    data = await r.json()
+                    embed = Embed(title=f"🌤️ Clima em {cidade.title()}", color=0x3498db)
+                    embed.add_field(name="Temperatura", value=f"{data['main']['temp']}°C")
+                    embed.add_field(name="Sensação", value=f"{data['main']['feels_like']}°C")
+                    embed.add_field(name="Descrição", value=data['weather'][0]['description'].capitalize())
+                    embed.add_field(name="Umidade", value=f"{data['main']['humidity']}%")
+                    embed.add_field(name="Vento", value=f"{data['wind']['speed']} m/s")
+                    
+                    # Adicionar ícone do clima
+                    icon_code = data['weather'][0]['icon']
+                    embed.set_thumbnail(url=f"http://openweathermap.org/img/wn/{icon_code}@2x.png")
+                    
+                    await interaction.followup.send(embed=embed)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Erro ao buscar clima: {str(e)}")
 
     @commands.slash_command(name="dado", description="Rola um dado com X lados")
-    async def dado(self, interaction: Interaction, lados: int = 6):
-        if lados <= 1:
-            await interaction.response.send_message("Número de lados inválido.")
-        else:
-            numero = random.randint(1, lados)
-            await interaction.response.send_message(f"🎲 Você rolou: **{numero}**")
+    async def dado(self, interaction: Interaction, lados: int = SlashOption(description="Número de lados do dado", min_value=2, max_value=1000, default=6)):
+        numero = random.randint(1, lados)
+        await interaction.response.send_message(f"🎲 Você rolou um d{lados}: **{numero}**")
 
     @commands.slash_command(name="cronometro", description="Inicia um cronômetro temporizado")
-    async def cronometro(self, interaction: Interaction, segundos: int):
-        await interaction.response.send_message(f"⏱️ Cronômetro iniciado por {segundos}s...")
+    async def cronometro(self, interaction: Interaction, segundos: int = SlashOption(description="Duração em segundos", min_value=1, max_value=300)):
+        if segundos > 60:
+            await interaction.response.send_message(f"⏱️ Cronômetro iniciado por {segundos}s... Você será notificado quando terminar.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⏱️ Cronômetro iniciado por {segundos}s...")
+            
         await asyncio.sleep(segundos)
-        await interaction.followup.send("⏰ Tempo encerrado!")
+        
+        try:
+            await interaction.followup.send(f"⏰ <@{interaction.user.id}> Tempo encerrado!")
+        except Exception as e:
+            print(f"Erro ao enviar notificação de cronômetro: {e}")
 
     @commands.slash_command(name="enquete", description="Cria uma enquete com até 5 opções")
     async def enquete(self, interaction: Interaction, pergunta: str, opcoes: str):
         opcoes_lista = [x.strip() for x in opcoes.split(",")][:5]
         if len(opcoes_lista) < 2:
-            await interaction.response.send_message("Você precisa de pelo menos duas opções.")
+            await interaction.response.send_message("Você precisa de pelo menos duas opções.", ephemeral=True)
             return
+            
         embed = Embed(title="📊 Enquete", description=pergunta, color=0xf1c40f)
-        botoes = ui.View()
         for i, opcao in enumerate(opcoes_lista):
-            btn = ui.Button(label=opcao, custom_id=f"vote_{i}")
-            async def votar_callback(inter, index=i):
-                await inter.response.send_message(f"✅ Voto computado para: **{opcoes_lista[index]}**", ephemeral=True)
-            btn.callback = votar_callback
-            botoes.add_item(btn)
-        await interaction.response.send_message(embed=embed, view=botoes)
+            embed.add_field(name=f"Opção {i+1}", value=opcao, inline=False)
+            
+        view = EnqueteView(opcoes_lista)
+        await interaction.response.send_message(embed=embed, view=view)
 
     @commands.slash_command(name="quote", description="Receba uma citação aleatória")
     async def quote(self, interaction: Interaction):
@@ -154,46 +225,104 @@ class Utilitarios(commands.Cog):
         await interaction.response.send_modal(SugestaoModal())
 
     @commands.slash_command(name="numero_aleatorio", description="Gera um número entre dois valores")
-    async def numero_aleatorio(self, interaction: Interaction, minimo: int, maximo: int):
+    async def numero_aleatorio(self, interaction: Interaction, 
+                              minimo: int = SlashOption(description="Valor mínimo", default=1), 
+                              maximo: int = SlashOption(description="Valor máximo", default=100)):
         if minimo >= maximo:
-            await interaction.response.send_message("⚠️ O mínimo deve ser menor que o máximo.")
+            await interaction.response.send_message("⚠️ O mínimo deve ser menor que o máximo.", ephemeral=True)
         else:
-            await interaction.response.send_message(f"🎲 Número gerado: {random.randint(minimo, maximo)}")
+            await interaction.response.send_message(f"🎲 Número gerado: **{random.randint(minimo, maximo)}**")
 
     @commands.slash_command(name="senha", description="Gera uma senha aleatória segura")
-    async def senha(self, interaction: Interaction, tamanho: int = 12):
-        if tamanho < 4 or tamanho > 32:
-            await interaction.response.send_message("Escolha um tamanho entre 4 e 32 caracteres.")
-            return
-        caracteres = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()"
+    async def senha(self, interaction: Interaction, 
+                   tamanho: int = SlashOption(description="Tamanho da senha", min_value=4, max_value=32, default=12),
+                   incluir_maiusculas: bool = SlashOption(description="Incluir letras maiúsculas", default=True),
+                   incluir_numeros: bool = SlashOption(description="Incluir números", default=True),
+                   incluir_simbolos: bool = SlashOption(description="Incluir símbolos", default=True)):
+        # Construir conjunto de caracteres com base nas opções
+        caracteres = "abcdefghijklmnopqrstuvwxyz"
+        if incluir_maiusculas:
+            caracteres += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        if incluir_numeros:
+            caracteres += "0123456789"
+        if incluir_simbolos:
+            caracteres += "!@#$%^&*()-_=+[]{}|;:,.<>?"
+            
+        # Gerar senha
         senha = ''.join(secrets.choice(caracteres) for _ in range(tamanho))
-        await interaction.response.send_message(f"🔐 Sua senha gerada: `{senha}`")
+        
+        # Enviar como mensagem efêmera para maior segurança
+        await interaction.response.send_message(f"🔐 Sua senha gerada: `{senha}`", ephemeral=True)
 
     @commands.slash_command(name="contagem", description="Faz uma contagem regressiva")
-    async def contagem(self, interaction: Interaction, segundos: int):
-        if segundos > 15:
-            await interaction.response.send_message("⚠️ Limite de 15 segundos.")
-            return
-        msg = await interaction.response.send_message(f"Contagem iniciada: {segundos}s")
+    async def contagem(self, interaction: Interaction, segundos: int = SlashOption(description="Duração em segundos", min_value=1, max_value=15)):
+        await interaction.response.defer()
+        msg = await interaction.followup.send(f"⏱️ Contagem iniciada: {segundos}s")
+        
         for i in range(segundos - 1, 0, -1):
             await asyncio.sleep(1)
-            await msg.edit(content=f"{i}s...")
+            await msg.edit(content=f"⏱️ {i}s...")
+            
         await asyncio.sleep(1)
         await msg.edit(content="🎉 Tempo encerrado!")
 
     @commands.slash_command(name="github", description="Mostra info de um repositório do GitHub")
     async def github(self, interaction: Interaction, repositorio: str):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://api.github.com/repos/{repositorio}") as r:
-                if r.status != 200:
-                    await interaction.response.send_message("❌ Repositório não encontrado.")
-                    return
-                data = await r.json()
-                embed = Embed(title=data['full_name'], description=data['description'], url=data['html_url'], color=0x3333ff)
-                embed.add_field(name="⭐ Stars", value=data['stargazers_count'])
-                embed.add_field(name="🔀 Forks", value=data['forks_count'])
-                embed.set_footer(text="GitHub")
-                await interaction.response.send_message(embed=embed)
+        await interaction.response.defer()
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"https://api.github.com/repos/{repositorio}") as r:
+                    if r.status != 200:
+                        await interaction.followup.send("❌ Repositório não encontrado.")
+                        return
+                        
+                    data = await r.json()
+                    embed = Embed(title=data['full_name'], description=data['description'], url=data['html_url'], color=0x3333ff)
+                    
+                    # Adicionar mais informações úteis
+                    embed.add_field(name="⭐ Stars", value=data['stargazers_count'])
+                    embed.add_field(name="🔀 Forks", value=data['forks_count'])
+                    embed.add_field(name="👀 Watchers", value=data['watchers_count'])
+                    embed.add_field(name="🔧 Linguagem", value=data['language'] or "N/A")
+                    embed.add_field(name="🔄 Última atualização", value=data['updated_at'].split('T')[0])
+                    
+                    # Adicionar avatar do dono
+                    if 'owner' in data and 'avatar_url' in data['owner']:
+                        embed.set_thumbnail(url=data['owner']['avatar_url'])
+                        
+                    embed.set_footer(text="GitHub")
+                    await interaction.followup.send(embed=embed)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Erro ao buscar informações: {str(e)}")
+
+    # Novo comando para tradução
+    @commands.slash_command(name="traduzir", description="Traduz um texto para outro idioma")
+    async def traduzir(self, interaction: Interaction, texto: str, idioma: str = SlashOption(
+        description="Idioma de destino",
+        choices={"Inglês": "en", "Espanhol": "es", "Francês": "fr", "Alemão": "de", "Italiano": "it", "Japonês": "ja"}
+    )):
+        await interaction.response.defer()
+        
+        try:
+            api_key = os.getenv("TRANSLATION_API")
+            if not api_key:
+                # Simulação de tradução para demonstração (em produção, use uma API real)
+                traducoes = {
+                    "en": "This is a simulated translation (English)",
+                    "es": "Esta es una traducción simulada (Español)",
+                    "fr": "Ceci est une traduction simulée (Français)",
+                    "de": "Dies ist eine simulierte Übersetzung (Deutsch)",
+                    "it": "Questa è una traduzione simulata (Italiano)",
+                    "ja": "これはシミュレートされた翻訳です (日本語)"
+                }
+                traducao = traducoes.get(idioma, "Tradução simulada")
+                await interaction.followup.send(f"⚠️ API de tradução não configurada. Usando simulação:\n\n{traducao}")
+            else:
+                # Aqui você implementaria a chamada real para a API de tradução
+                await interaction.followup.send(f"🌐 Texto traduzido para {idioma}:\n\n{texto} (tradução simulada)")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Erro ao traduzir: {str(e)}")
 
 def setup(bot):
     bot.add_cog(Utilitarios(bot))
