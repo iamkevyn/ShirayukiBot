@@ -31,12 +31,7 @@ YDL_OPTIONS = {
         }
     },
     "socket_timeout": 20,
-    "retry_sleep_functions": {"http": lambda x: 5},
-    "postprocessors": [{
-        "key": "FFmpegExtractAudio",
-        "preferredcodec": "mp3",
-        "preferredquality": "192"
-    }]
+    "retry_sleep_functions": {"http": lambda x: 5}
 }
 
 # Configuração alternativa para tentar quando a principal falhar
@@ -49,9 +44,7 @@ YDL_OPTIONS_FALLBACK = {
     "ignoreerrors": True,
     "no_warnings": True,
     "socket_timeout": 30,
-    "extractor_retries": 10,
-    "external_downloader": "aria2c",
-    "external_downloader_args": ["--min-split-size=1M", "--max-connection-per-server=16"]
+    "extractor_retries": 10
 }
 
 # Spotify
@@ -131,6 +124,7 @@ class Musica(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.queues = {}
+        self.now_playing = {}
         self.autoleave.start()
 
     def get_voice(self, guild):
@@ -142,8 +136,10 @@ class Musica(commands.Cog):
             # Tenta com as opções principais
             data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(query, download=False))
             if "entries" in data:
-                return [{"title": e["title"], "url": e["url"], "webpage_url": e["webpage_url"]} for e in data["entries"]]
-            return [{"title": data["title"], "url": data["url"], "webpage_url": data["webpage_url"]}]
+                return [{"title": e.get("title", "Música sem título"), "url": e.get("url", ""), "webpage_url": e.get("webpage_url", "")} for e in data["entries"] if e and "url" in e]
+            if data and "url" in data:
+                return [{"title": data.get("title", "Música sem título"), "url": data.get("url", ""), "webpage_url": data.get("webpage_url", "")}]
+            return []
         except Exception as e:
             print(f"Erro ao buscar música com opções principais: {e}")
             try:
@@ -151,8 +147,10 @@ class Musica(commands.Cog):
                 print("Tentando com opções alternativas...")
                 data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS_FALLBACK).extract_info(query, download=False))
                 if "entries" in data:
-                    return [{"title": e["title"], "url": e["url"], "webpage_url": e["webpage_url"]} for e in data["entries"]]
-                return [{"title": data["title"], "url": data["url"], "webpage_url": data["webpage_url"]}]
+                    return [{"title": e.get("title", "Música sem título"), "url": e.get("url", ""), "webpage_url": e.get("webpage_url", "")} for e in data["entries"] if e and "url" in e]
+                if data and "url" in data:
+                    return [{"title": data.get("title", "Música sem título"), "url": data.get("url", ""), "webpage_url": data.get("webpage_url", "")}]
+                return []
             except Exception as e2:
                 print(f"Erro ao buscar música com opções alternativas: {e2}")
                 # Se for um link do YouTube, tenta usar um serviço alternativo
@@ -166,7 +164,7 @@ class Musica(commands.Cog):
                             video_id = query.split("youtu.be/")[1].split("?")[0]
                         
                         if video_id:
-                            # Usa um serviço alternativo (exemplo fictício)
+                            # Usa um serviço alternativo
                             title = f"Música do YouTube (ID: {video_id})"
                             return [{"title": title, "url": query, "webpage_url": query}]
                     except Exception as e3:
@@ -178,14 +176,36 @@ class Musica(commands.Cog):
         try:
             # Tenta com as opções principais
             info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(url, download=False))
-            return nextcord.FFmpegPCMAudio(info["url"])
+            if not info or "url" not in info:
+                raise ValueError("Informações de áudio incompletas")
+                
+            # Usar PCMVolumeTransformer para evitar o erro de _process
+            audio = nextcord.PCMVolumeTransformer(
+                nextcord.FFmpegPCMAudio(
+                    info["url"],
+                    before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+                    options="-vn -b:a 128k"
+                )
+            )
+            return audio
         except Exception as e:
             print(f"Erro ao preparar áudio com opções principais: {e}")
             try:
                 # Tenta com as opções de fallback
                 print("Tentando preparar áudio com opções alternativas...")
                 info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS_FALLBACK).extract_info(url, download=False))
-                return nextcord.FFmpegPCMAudio(info["url"])
+                if not info or "url" not in info:
+                    raise ValueError("Informações de áudio incompletas (fallback)")
+                    
+                # Usar PCMVolumeTransformer para evitar o erro de _process
+                audio = nextcord.PCMVolumeTransformer(
+                    nextcord.FFmpegPCMAudio(
+                        info["url"],
+                        before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+                        options="-vn -b:a 128k"
+                    )
+                )
+                return audio
             except Exception as e2:
                 print(f"Erro ao preparar áudio com opções alternativas: {e2}")
                 return None
@@ -202,13 +222,27 @@ class Musica(commands.Cog):
                 faixas.append(f"{track['name']} {track['artists'][0]['name']}")
             elif "playlist" in link:
                 offset = 0
-                while True:
-                    items = sp.playlist_items(link, offset=offset)["items"]
+                limit = 50  # Limite máximo por requisição
+                total_tracks = 0
+                
+                # Primeira requisição para obter o total
+                playlist_info = sp.playlist_items(link, limit=1, offset=0)
+                if "total" in playlist_info:
+                    total_tracks = min(playlist_info["total"], 50)  # Limitar a 50 faixas para evitar sobrecarga
+                
+                while offset < total_tracks:
+                    items = sp.playlist_items(link, limit=limit, offset=offset)["items"]
                     if not items:
                         break
-                    faixas += [f"{i['track']['name']} {i['track']['artists'][0]['name']}" for i in items if i["track"]]
+                    for item in items:
+                        if item.get("track") and item["track"].get("name") and item["track"].get("artists"):
+                            track_name = item["track"]["name"]
+                            artist_name = item["track"]["artists"][0]["name"]
+                            faixas.append(f"{track_name} {artist_name}")
                     offset += len(items)
-            return faixas
+                    
+                print(f"Extraídas {len(faixas)} faixas da playlist Spotify")
+            return faixas if faixas else [link]
         except Exception as e:
             print(f"Erro ao extrair do Spotify: {e}")
             # Tenta extrair o ID da faixa ou playlist para busca manual
@@ -228,73 +262,157 @@ class Musica(commands.Cog):
         if not vc:
             return
             
-        if not self.queues.get(guild_id):
+        if not self.queues.get(guild_id) or len(self.queues[guild_id]) == 0:
+            self.now_playing.pop(guild_id, None)
             await vc.disconnect()
             return
             
         musica = self.queues[guild_id].pop(0)
-        source = await self.prepare_audio(musica["url"])
-        if not source:
-            await interaction.channel.send("❌ Não foi possível reproduzir esta música. Pulando para a próxima...")
-            if self.queues.get(guild_id):
-                await self.play_next(interaction)
-            return
+        self.now_playing[guild_id] = musica
+        
+        try:
+            source = await self.prepare_audio(musica["url"])
+            if not source:
+                await interaction.channel.send("❌ Não foi possível reproduzir esta música. Pulando para a próxima...", delete_after=10)
+                if self.queues.get(guild_id) and len(self.queues[guild_id]) > 0:
+                    await self.play_next(interaction)
+                return
+                
+            # Definir um callback seguro para quando a música terminar
+            def after_playing(error):
+                if error:
+                    print(f"Erro durante a reprodução: {error}")
+                # Usar create_task para evitar problemas com o loop de eventos
+                asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
             
-        vc.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop))
-        embed = Embed(title="🎧 Tocando agora", description=f"[{musica['title']}]({musica['webpage_url']})", color=0x1DB954)
-        await interaction.channel.send(embed=embed, view=MusicControlView(self))
+            vc.play(source, after=after_playing)
+            
+            embed = Embed(title="🎧 Tocando agora", description=f"[{musica['title']}]({musica['webpage_url']})", color=0x1DB954)
+            await interaction.channel.send(embed=embed, view=MusicControlView(self))
+        except Exception as e:
+            print(f"Erro ao iniciar reprodução: {e}")
+            await interaction.channel.send(f"❌ Erro ao reproduzir: {str(e)[:100]}...", delete_after=10)
+            if self.queues.get(guild_id) and len(self.queues[guild_id]) > 0:
+                await self.play_next(interaction)
 
     @nextcord.slash_command(name="tocar", description="Toque uma música ou playlist do YouTube/Spotify.")
     async def tocar(self, interaction: Interaction, query: str = SlashOption(description="Link ou nome da música")):
-        await interaction.response.defer()
+        # Verificar se o usuário está em um canal de voz
         if not interaction.user.voice:
-            await interaction.followup.send("Você precisa estar em um canal de voz!")
+            await interaction.response.send_message("❌ Você precisa estar em um canal de voz!", ephemeral=True)
             return
+            
+        # Adiar a resposta para evitar timeout
+        await interaction.response.defer(ephemeral=True)
+        
+        # Conectar ao canal de voz se ainda não estiver conectado
         vc = self.get_voice(interaction.guild)
         if not vc:
             try:
                 vc = await interaction.user.voice.channel.connect()
                 self.queues[interaction.guild.id] = []
             except Exception as e:
-                await interaction.followup.send(f"❌ Erro ao conectar ao canal de voz: {str(e)}")
+                await interaction.followup.send(f"❌ Erro ao conectar ao canal de voz: {str(e)}", ephemeral=True)
                 return
 
-        await interaction.followup.send(f"🔍 Buscando: `{query}`...")
+        # Informar ao usuário que estamos buscando (apenas para ele)
+        await interaction.followup.send(f"🔍 Buscando: `{query}`...", ephemeral=True)
         
+        # Processar links do Spotify ou buscar diretamente
         termos = self.extract_spotify(query) if "spotify" in query else [query]
         musicas_adicionadas = 0
         
+        # Buscar e adicionar músicas à fila
         for termo in termos:
             resultados = await self.yt_search(termo)
             if resultados:
-                self.queues[interaction.guild.id].append(resultados[0])
+                self.queues.setdefault(interaction.guild.id, []).append(resultados[0])
                 musicas_adicionadas += 1
-                await interaction.followup.send(f"✅ Adicionado à fila: `{resultados[0]['title']}`")
+                
+                # Enviar mensagem de sucesso (visível para todos)
+                await interaction.channel.send(f"✅ **{interaction.user.display_name}** adicionou à fila: `{resultados[0]['title']}`")
 
+        # Informar se nenhuma música foi encontrada (apenas para o usuário)
         if musicas_adicionadas == 0:
-            await interaction.followup.send("❌ Não foi possível encontrar nenhuma música com essa busca.")
+            await interaction.followup.send("❌ Não foi possível encontrar nenhuma música com essa busca.", ephemeral=True)
             return
             
-        if not vc.is_playing():
-            await interaction.followup.send("▶️ Iniciando reprodução...")
+        # Iniciar reprodução se não estiver tocando nada
+        if not vc.is_playing() and not vc.is_paused():
+            await interaction.followup.send("▶️ Iniciando reprodução...", ephemeral=True)
             await self.play_next(interaction)
-        else:
-            await interaction.followup.send(f"🎶 {musicas_adicionadas} música(s) adicionada(s) à fila!")
 
     @nextcord.slash_command(name="fila", description="Mostra a fila de músicas.")
     async def fila(self, interaction: Interaction):
-        fila = self.queues.get(interaction.guild.id, [])
-        if not fila:
-            await interaction.response.send_message("A fila está vazia.")
+        guild_id = interaction.guild.id
+        fila = self.queues.get(guild_id, [])
+        
+        # Verificar se há algo tocando ou na fila
+        if not fila and not self.now_playing.get(guild_id):
+            await interaction.response.send_message("📭 A fila está vazia.", ephemeral=True)
             return
 
+        # Criar embed para a música atual
         embeds = []
-        for i in range(0, len(fila), 5):
-            embed = Embed(title="📜 Fila de Reprodução", color=0x1DB954)
-            for j, musica in enumerate(fila[i:i+5], start=i+1):
-                embed.add_field(name=f"{j}.", value=f"[{musica['title']}]({musica['webpage_url']})", inline=False)
+        if self.now_playing.get(guild_id):
+            current = self.now_playing[guild_id]
+            embed = Embed(title="🎵 Fila de Reprodução", color=0x1DB954)
+            embed.add_field(name="🎧 Tocando agora:", value=f"[{current['title']}]({current['webpage_url']})", inline=False)
+            
+            # Adicionar as próximas músicas
+            if fila:
+                for i, musica in enumerate(fila[:5], start=1):
+                    embed.add_field(name=f"{i}.", value=f"[{musica['title']}]({musica['webpage_url']})", inline=False)
+                
+                if len(fila) > 5:
+                    embed.set_footer(text=f"+ {len(fila) - 5} músicas na fila")
+            
             embeds.append(embed)
-        await interaction.response.send_message(embed=embeds[0], view=QueuePaginatorView(embeds))
+            
+            # Criar páginas adicionais se houver muitas músicas
+            if len(fila) > 5:
+                for i in range(5, len(fila), 5):
+                    embed = Embed(title="📜 Continuação da Fila", color=0x1DB954)
+                    for j, musica in enumerate(fila[i:i+5], start=i+1):
+                        embed.add_field(name=f"{j}.", value=f"[{musica['title']}]({musica['webpage_url']})", inline=False)
+                    embeds.append(embed)
+        
+        # Enviar a fila
+        if embeds:
+            if len(embeds) > 1:
+                await interaction.response.send_message(embed=embeds[0], view=QueuePaginatorView(embeds))
+            else:
+                await interaction.response.send_message(embed=embeds[0])
+        else:
+            await interaction.response.send_message("📭 A fila está vazia.", ephemeral=True)
+
+    @nextcord.slash_command(name="pular", description="Pula para a próxima música na fila.")
+    async def pular(self, interaction: Interaction):
+        vc = self.get_voice(interaction.guild)
+        if not vc:
+            await interaction.response.send_message("❌ Não estou conectado a um canal de voz!", ephemeral=True)
+            return
+            
+        if not vc.is_playing() and not vc.is_paused():
+            await interaction.response.send_message("❌ Não estou tocando nada no momento!", ephemeral=True)
+            return
+            
+        vc.stop()
+        await interaction.response.send_message("⏭️ Pulando para a próxima música...")
+
+    @nextcord.slash_command(name="parar", description="Para a reprodução e limpa a fila.")
+    async def parar(self, interaction: Interaction):
+        vc = self.get_voice(interaction.guild)
+        if not vc:
+            await interaction.response.send_message("❌ Não estou conectado a um canal de voz!", ephemeral=True)
+            return
+            
+        if interaction.guild.id in self.queues:
+            self.queues[interaction.guild.id] = []
+            
+        self.now_playing.pop(interaction.guild.id, None)
+        await vc.disconnect()
+        await interaction.response.send_message("⏹️ Reprodução interrompida e fila limpa.")
 
     @tasks.loop(minutes=1)
     async def autoleave(self):
@@ -303,9 +421,10 @@ class Musica(commands.Cog):
                 guild_id = vc.guild.id
                 if not hasattr(vc, "idle_since"):
                     vc.idle_since = datetime.datetime.utcnow()
-                elif (datetime.datetime.utcnow() - vc.idle_since).seconds > 900:
-                    await vc.disconnect()
+                elif (datetime.datetime.utcnow() - vc.idle_since).seconds > 300:  # 5 minutos
+                    self.now_playing.pop(guild_id, None)
                     self.queues.pop(guild_id, None)
+                    await vc.disconnect()
             elif hasattr(vc, "idle_since"):
                 del vc.idle_since
 
