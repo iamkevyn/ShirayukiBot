@@ -1,10 +1,11 @@
 import nextcord
-from nextcord import Interaction, Embed, ButtonStyle
+from nextcord import Interaction, Embed, ButtonStyle, SlashOption
 from nextcord.ui import View, Button
 from nextcord.ext import commands, application_commands
 import random
 import sqlite3
 import asyncio
+import os
 
 class QuizView(View):
     def __init__(self, interaction, quizzes):
@@ -15,8 +16,12 @@ class QuizView(View):
         self.score = 0
         self.user_id = interaction.user.id
         self.username = interaction.user.name
+        
+        # Adicionar botões com callbacks conectados
         for opcao in self.quizzes[0]['opcoes']:
-            self.add_item(Button(label=opcao, style=ButtonStyle.primary, custom_id=opcao))
+            button = Button(label=opcao, style=ButtonStyle.primary, custom_id=opcao)
+            button.callback = self.button_callback
+            self.add_item(button)
 
     async def interaction_check(self, interaction: Interaction):
         return interaction.user.id == self.user_id
@@ -24,7 +29,7 @@ class QuizView(View):
     async def on_timeout(self):
         await self.interaction.followup.send("⏰ Tempo esgotado!", ephemeral=True)
 
-    async def callback(self, interaction: Interaction):
+    async def button_callback(self, interaction: Interaction):
         resposta = interaction.data['custom_id']
         correta = self.quizzes[self.index]['resposta']
         if resposta == correta:
@@ -32,6 +37,7 @@ class QuizView(View):
             feedback = "✅ Resposta correta!"
         else:
             feedback = f"❌ Resposta errada! A correta era **{correta}**."
+        
         self.index += 1
         if self.index >= len(self.quizzes):
             embed = Embed(title="Resultado Final", description=f"Você acertou {self.score} de {len(self.quizzes)} perguntas.", color=0x2ecc71)
@@ -42,22 +48,29 @@ class QuizView(View):
             embed.set_image(url=self.quizzes[self.index]['imagem'])
             self.clear_items()
             for opcao in self.quizzes[self.index]['opcoes']:
-                self.add_item(Button(label=opcao, style=ButtonStyle.primary, custom_id=opcao))
+                button = Button(label=opcao, style=ButtonStyle.primary, custom_id=opcao)
+                button.callback = self.button_callback
+                self.add_item(button)
             await interaction.response.edit_message(embed=embed, view=self)
 
     def salvar_pontuacao(self):
-        con = sqlite3.connect("/mnt/data/quiz_ranking.db")
-        cur = con.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS ranking (user_id INTEGER PRIMARY KEY, username TEXT, pontos INTEGER)")
-        cur.execute("SELECT pontos FROM ranking WHERE user_id = ?", (self.user_id,))
-        resultado = cur.fetchone()
-        if resultado:
-            if self.score > resultado[0]:
-                cur.execute("UPDATE ranking SET pontos = ?, username = ? WHERE user_id = ?", (self.score, self.username, self.user_id))
-        else:
-            cur.execute("INSERT INTO ranking (user_id, username, pontos) VALUES (?, ?, ?)", (self.user_id, self.username, self.score))
-        con.commit()
-        con.close()
+        # Usar um caminho relativo para o banco de dados
+        db_path = os.path.join(os.getcwd(), "quiz_ranking.db")
+        try:
+            con = sqlite3.connect(db_path)
+            cur = con.cursor()
+            cur.execute("CREATE TABLE IF NOT EXISTS ranking (user_id INTEGER PRIMARY KEY, username TEXT, pontos INTEGER)")
+            cur.execute("SELECT pontos FROM ranking WHERE user_id = ?", (self.user_id,))
+            resultado = cur.fetchone()
+            if resultado:
+                if self.score > resultado[0]:
+                    cur.execute("UPDATE ranking SET pontos = ?, username = ? WHERE user_id = ?", (self.score, self.username, self.user_id))
+            else:
+                cur.execute("INSERT INTO ranking (user_id, username, pontos) VALUES (?, ?, ?)", (self.user_id, self.username, self.score))
+            con.commit()
+            con.close()
+        except Exception as e:
+            print(f"Erro ao salvar pontuação: {e}")
 
 class JogosExtras(commands.Cog):
     def __init__(self, bot):
@@ -88,8 +101,7 @@ class JogosExtras(commands.Cog):
         palavras = ["python", "discord", "anime", "programacao", "bot"]
         palavra = random.choice(palavras)
         exibida = ["_" for _ in palavra]
-        await interaction.response.send_message(f"A palavra é: {' '.join(exibida)}")
-(⚠ Este jogo ainda está em construção.)")
+        await interaction.response.send_message(f"A palavra é: {' '.join(exibida)}\n(⚠ Este jogo ainda está em construção.)")
 
     @nextcord.slash_command(name="pedra_papel_tesoura", description="Jogue Pedra, Papel ou Tesoura!")
     async def pedra_papel_tesoura(self, interaction: Interaction, escolha: str = SlashOption(choices=["pedra", "papel", "tesoura"])):
@@ -97,7 +109,9 @@ class JogosExtras(commands.Cog):
         escolha_bot = random.choice(opcoes)
         if escolha == escolha_bot:
             resultado = "Empate!"
-        elif (escolha == "pedra" and escolha_bot == "tesoura") or              (escolha == "papel" and escolha_bot == "pedra") or              (escolha == "tesoura" and escolha_bot == "papel"):
+        elif (escolha == "pedra" and escolha_bot == "tesoura") or \
+             (escolha == "papel" and escolha_bot == "pedra") or \
+             (escolha == "tesoura" and escolha_bot == "papel"):
             resultado = "Você ganhou!"
         else:
             resultado = "Você perdeu!"
@@ -137,8 +151,7 @@ class JogosExtras(commands.Cog):
             resultado = "❌ Você perdeu!"
         else:
             resultado = "🤝 Empate!"
-        await interaction.response.send_message(f"Você: {numero} | Bot: {bot_num}
-{resultado}")
+        await interaction.response.send_message(f"Você: {numero} | Bot: {bot_num}\n{resultado}")
 
 def setup(bot):
     bot.add_cog(JogosExtras(bot))
