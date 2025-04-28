@@ -3,7 +3,7 @@ import asyncio
 import datetime
 import random
 import nextcord
-from nextcord import Interaction, Embed, ButtonStyle
+from nextcord import Interaction, Embed, ButtonStyle, SlashOption
 from nextcord.ui import View, Button
 from nextcord.ext import commands, tasks
 import yt_dlp
@@ -23,10 +23,14 @@ YDL_OPTIONS = {
 # Spotify
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
-sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
-    client_id=SPOTIFY_CLIENT_ID,
-    client_secret=SPOTIFY_CLIENT_SECRET
-))
+
+# Inicializar o cliente Spotify apenas se as credenciais estiverem disponíveis
+sp = None
+if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
+    sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET
+    ))
 
 # View para botões
 class MusicControlView(View):
@@ -72,13 +76,16 @@ class QueuePaginatorView(View):
         self.embeds = embeds
         self.page = 0
 
-        self.add_item(Button(label="⬅️", style=ButtonStyle.gray, custom_id="prev"))
-        self.add_item(Button(label="➡️", style=ButtonStyle.gray, custom_id="next"))
+        # Criar botões com callbacks conectados
+        prev_button = Button(label="⬅️", style=ButtonStyle.gray, custom_id="prev")
+        prev_button.callback = self.button_callback
+        self.add_item(prev_button)
+        
+        next_button = Button(label="➡️", style=ButtonStyle.gray, custom_id="next")
+        next_button.callback = self.button_callback
+        self.add_item(next_button)
 
-    async def interaction_check(self, interaction: Interaction):
-        return True
-
-    async def interaction_handler(self, interaction: Interaction):
+    async def button_callback(self, interaction: Interaction):
         custom_id = interaction.data["custom_id"]
         if custom_id == "prev" and self.page > 0:
             self.page -= 1
@@ -97,39 +104,63 @@ class Musica(commands.Cog):
 
     async def yt_search(self, query):
         loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(query, download=False))
-        if "entries" in data:
-            return [{"title": e["title"], "url": e["url"], "webpage_url": e["webpage_url"]} for e in data["entries"]]
-        return [{"title": data["title"], "url": data["url"], "webpage_url": data["webpage_url"]}]
+        try:
+            data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(query, download=False))
+            if "entries" in data:
+                return [{"title": e["title"], "url": e["url"], "webpage_url": e["webpage_url"]} for e in data["entries"]]
+            return [{"title": data["title"], "url": data["url"], "webpage_url": data["webpage_url"]}]
+        except Exception as e:
+            print(f"Erro ao buscar música: {e}")
+            return []
 
     async def prepare_audio(self, url):
         loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(url, download=False))
-        return nextcord.FFmpegPCMAudio(info["url"])
+        try:
+            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(url, download=False))
+            return nextcord.FFmpegPCMAudio(info["url"])
+        except Exception as e:
+            print(f"Erro ao preparar áudio: {e}")
+            return None
 
     def extract_spotify(self, link):
         faixas = []
-        if "track" in link:
-            track = sp.track(link)
-            faixas.append(f"{track['name']} {track['artists'][0]['name']}")
-        elif "playlist" in link:
-            offset = 0
-            while True:
-                items = sp.playlist_items(link, offset=offset)["items"]
-                if not items:
-                    break
-                faixas += [f"{i['track']['name']} {i['track']['artists'][0]['name']}" for i in items if i["track"]]
-                offset += len(items)
-        return faixas
+        if not sp:
+            return [link]  # Retorna o link original se o cliente Spotify não estiver disponível
+            
+        try:
+            if "track" in link:
+                track = sp.track(link)
+                faixas.append(f"{track['name']} {track['artists'][0]['name']}")
+            elif "playlist" in link:
+                offset = 0
+                while True:
+                    items = sp.playlist_items(link, offset=offset)["items"]
+                    if not items:
+                        break
+                    faixas += [f"{i['track']['name']} {i['track']['artists'][0]['name']}" for i in items if i["track"]]
+                    offset += len(items)
+            return faixas
+        except Exception as e:
+            print(f"Erro ao extrair do Spotify: {e}")
+            return [link]  # Retorna o link original em caso de erro
 
     async def play_next(self, interaction):
         guild_id = interaction.guild.id
         vc = self.get_voice(interaction.guild)
+        if not vc:
+            return
+            
         if not self.queues.get(guild_id):
             await vc.disconnect()
             return
+            
         musica = self.queues[guild_id].pop(0)
         source = await self.prepare_audio(musica["url"])
+        if not source:
+            await interaction.channel.send("❌ Não foi possível reproduzir esta música. Pulando para a próxima...")
+            await self.play_next(interaction)
+            return
+            
         vc.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop))
         embed = Embed(title="🎧 Tocando agora", description=f"[{musica['title']}]({musica['webpage_url']})", color=0x1DB954)
         await interaction.channel.send(embed=embed, view=MusicControlView(self))
@@ -146,15 +177,22 @@ class Musica(commands.Cog):
             self.queues[interaction.guild.id] = []
 
         termos = self.extract_spotify(query) if "spotify" in query else [query]
+        musicas_adicionadas = 0
+        
         for termo in termos:
             resultados = await self.yt_search(termo)
             if resultados:
                 self.queues[interaction.guild.id].append(resultados[0])
+                musicas_adicionadas += 1
 
+        if musicas_adicionadas == 0:
+            await interaction.followup.send("❌ Não foi possível encontrar nenhuma música com essa busca.")
+            return
+            
         if not vc.is_playing():
             await self.play_next(interaction)
         else:
-            await interaction.followup.send(f"🎶 {len(termos)} música(s) adicionada(s) à fila!")
+            await interaction.followup.send(f"🎶 {musicas_adicionadas} música(s) adicionada(s) à fila!")
 
     @commands.slash_command(name="fila", description="Mostra a fila de músicas.")
     async def fila(self, interaction: Interaction):
