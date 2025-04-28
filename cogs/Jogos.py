@@ -1,3 +1,4 @@
+
 import nextcord
 from nextcord import Interaction, Embed, ButtonStyle, SlashOption
 from nextcord.ui import View, Button
@@ -127,10 +128,13 @@ class JogosExtras(commands.Cog):
         else:
             await interaction.response.send_message(f"Você escolheu {escolha} e jogou {numero}. Eu joguei {numero_bot}. Deu {resultado}. Você perdeu!")
 
-    @nextcord.slash_command(name="dado", description="Jogue um dado de 6 lados!")
-    async def dado(self, interaction: Interaction):
-        resultado = random.randint(1, 6)
-        await interaction.response.send_message(f"🎲 Você tirou {resultado} no dado!")
+    @nextcord.slash_command(name="adivinhe_numero", description="Tente adivinhar o número que estou pensando!")
+    async def adivinhe_numero(self, interaction: Interaction, palpite: int = SlashOption(description="Seu palpite (entre 1 e 10)", min_value=1, max_value=10)):
+        numero_secreto = random.randint(1, 10)
+        if palpite == numero_secreto:
+            await interaction.response.send_message(f"🎉 Parabéns! Você acertou! Eu estava pensando no número {numero_secreto}.")
+        else:
+            await interaction.response.send_message(f"❌ Que pena! Eu estava pensando no número {numero_secreto}. Tente novamente!")
 
     @nextcord.slash_command(name="cara_ou_coroa", description="Jogue cara ou coroa!")
     async def cara_ou_coroa(self, interaction: Interaction):
