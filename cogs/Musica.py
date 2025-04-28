@@ -165,7 +165,7 @@ class Musica(commands.Cog):
         embed = Embed(title="🎧 Tocando agora", description=f"[{musica['title']}]({musica['webpage_url']})", color=0x1DB954)
         await interaction.channel.send(embed=embed, view=MusicControlView(self))
 
-    @commands.slash_command(name="tocar", description="Toque uma música ou playlist do YouTube/Spotify.")
+    @nextcord.slash_command(name="tocar", description="Toque uma música ou playlist do YouTube/Spotify.")
     async def tocar(self, interaction: Interaction, query: str = SlashOption(description="Link ou nome da música")):
         await interaction.response.defer()
         if not interaction.user.voice:
@@ -194,7 +194,7 @@ class Musica(commands.Cog):
         else:
             await interaction.followup.send(f"🎶 {musicas_adicionadas} música(s) adicionada(s) à fila!")
 
-    @commands.slash_command(name="fila", description="Mostra a fila de músicas.")
+    @nextcord.slash_command(name="fila", description="Mostra a fila de músicas.")
     async def fila(self, interaction: Interaction):
         fila = self.queues.get(interaction.guild.id, [])
         if not fila:
