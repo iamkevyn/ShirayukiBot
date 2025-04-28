@@ -68,8 +68,16 @@ cogs_dir = "./cogs"
 if not os.path.isdir(cogs_dir):
     print(f"❌ Erro: Diretório de COGs '{cogs_dir}' não encontrado.")
 else:
-    cog_files = [f for f in os.listdir(cogs_dir) if f.endswith(".py") and not f.startswith("__")]
-    print(f"-> Encontrados {len(cog_files)} arquivos .py em '{cogs_dir}'")
+    try:
+        all_files = os.listdir(cogs_dir)
+        print(f"-> Arquivos encontrados em '{cogs_dir}': {all_files}") # Imprimir todos os arquivos encontrados
+        cog_files = [f for f in all_files if f.endswith(".py") and not f.startswith("__")]
+        print(f"-> Arquivos .py a serem carregados: {cog_files}") # Imprimir arquivos .py filtrados
+    except Exception as e:
+        print(f"❌ Erro ao listar arquivos em '{cogs_dir}':")
+        traceback.print_exc()
+        cog_files = [] # Evitar erro se listdir falhar
+
     for filename in cog_files:
         cog_path = f"cogs.{filename[:-3]}"
         print(f"--> Tentando carregar: {cog_path}")
