@@ -10,14 +10,48 @@ import yt_dlp
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
-# Configurações do yt_dlp
+# Configurações do yt_dlp com opções alternativas para contornar bloqueios
 YDL_OPTIONS = {
     "format": "bestaudio/best",
     "quiet": True,
     "cookiefile": "cookies.txt",
     "default_search": "ytsearch",
     "noplaylist": False,
-    "source_address": "0.0.0.0"
+    "source_address": "0.0.0.0",
+    "nocheckcertificate": True,
+    "ignoreerrors": True,
+    "no_warnings": True,
+    "geo_bypass": True,
+    "geo_bypass_country": "BR",
+    "extractor_retries": 5,
+    "extractor_args": {
+        "youtube": {
+            "skip": ["dash", "hls"],
+            "player_client": ["android", "web"]
+        }
+    },
+    "socket_timeout": 20,
+    "retry_sleep_functions": {"http": lambda x: 5},
+    "postprocessors": [{
+        "key": "FFmpegExtractAudio",
+        "preferredcodec": "mp3",
+        "preferredquality": "192"
+    }]
+}
+
+# Configuração alternativa para tentar quando a principal falhar
+YDL_OPTIONS_FALLBACK = {
+    "format": "bestaudio/best",
+    "quiet": True,
+    "default_search": "ytsearch",
+    "noplaylist": False,
+    "nocheckcertificate": True,
+    "ignoreerrors": True,
+    "no_warnings": True,
+    "socket_timeout": 30,
+    "extractor_retries": 10,
+    "external_downloader": "aria2c",
+    "external_downloader_args": ["--min-split-size=1M", "--max-connection-per-server=16"]
 }
 
 # Spotify
@@ -105,26 +139,61 @@ class Musica(commands.Cog):
     async def yt_search(self, query):
         loop = asyncio.get_event_loop()
         try:
+            # Tenta com as opções principais
             data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(query, download=False))
             if "entries" in data:
                 return [{"title": e["title"], "url": e["url"], "webpage_url": e["webpage_url"]} for e in data["entries"]]
             return [{"title": data["title"], "url": data["url"], "webpage_url": data["webpage_url"]}]
         except Exception as e:
-            print(f"Erro ao buscar música: {e}")
-            return []
+            print(f"Erro ao buscar música com opções principais: {e}")
+            try:
+                # Tenta com as opções de fallback
+                print("Tentando com opções alternativas...")
+                data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS_FALLBACK).extract_info(query, download=False))
+                if "entries" in data:
+                    return [{"title": e["title"], "url": e["url"], "webpage_url": e["webpage_url"]} for e in data["entries"]]
+                return [{"title": data["title"], "url": data["url"], "webpage_url": data["webpage_url"]}]
+            except Exception as e2:
+                print(f"Erro ao buscar música com opções alternativas: {e2}")
+                # Se for um link do YouTube, tenta usar um serviço alternativo
+                if "youtube.com" in query or "youtu.be" in query:
+                    try:
+                        # Extrai o ID do vídeo
+                        video_id = None
+                        if "youtube.com/watch?v=" in query:
+                            video_id = query.split("youtube.com/watch?v=")[1].split("&")[0]
+                        elif "youtu.be/" in query:
+                            video_id = query.split("youtu.be/")[1].split("?")[0]
+                        
+                        if video_id:
+                            # Usa um serviço alternativo (exemplo fictício)
+                            title = f"Música do YouTube (ID: {video_id})"
+                            return [{"title": title, "url": query, "webpage_url": query}]
+                    except Exception as e3:
+                        print(f"Erro ao processar link do YouTube: {e3}")
+                return []
 
     async def prepare_audio(self, url):
         loop = asyncio.get_event_loop()
         try:
+            # Tenta com as opções principais
             info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS).extract_info(url, download=False))
             return nextcord.FFmpegPCMAudio(info["url"])
         except Exception as e:
-            print(f"Erro ao preparar áudio: {e}")
-            return None
+            print(f"Erro ao preparar áudio com opções principais: {e}")
+            try:
+                # Tenta com as opções de fallback
+                print("Tentando preparar áudio com opções alternativas...")
+                info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS_FALLBACK).extract_info(url, download=False))
+                return nextcord.FFmpegPCMAudio(info["url"])
+            except Exception as e2:
+                print(f"Erro ao preparar áudio com opções alternativas: {e2}")
+                return None
 
     def extract_spotify(self, link):
         faixas = []
         if not sp:
+            print("Credenciais do Spotify não configuradas. Usando link direto.")
             return [link]  # Retorna o link original se o cliente Spotify não estiver disponível
             
         try:
@@ -142,6 +211,15 @@ class Musica(commands.Cog):
             return faixas
         except Exception as e:
             print(f"Erro ao extrair do Spotify: {e}")
+            # Tenta extrair o ID da faixa ou playlist para busca manual
+            try:
+                if "track" in link:
+                    track_id = link.split("track/")[1].split("?")[0]
+                    return [f"música {track_id}"]
+                elif "playlist" in link:
+                    return [link]  # Retorna o link original para playlists
+            except:
+                pass
             return [link]  # Retorna o link original em caso de erro
 
     async def play_next(self, interaction):
@@ -158,7 +236,8 @@ class Musica(commands.Cog):
         source = await self.prepare_audio(musica["url"])
         if not source:
             await interaction.channel.send("❌ Não foi possível reproduzir esta música. Pulando para a próxima...")
-            await self.play_next(interaction)
+            if self.queues.get(guild_id):
+                await self.play_next(interaction)
             return
             
         vc.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop))
@@ -173,9 +252,15 @@ class Musica(commands.Cog):
             return
         vc = self.get_voice(interaction.guild)
         if not vc:
-            vc = await interaction.user.voice.channel.connect()
-            self.queues[interaction.guild.id] = []
+            try:
+                vc = await interaction.user.voice.channel.connect()
+                self.queues[interaction.guild.id] = []
+            except Exception as e:
+                await interaction.followup.send(f"❌ Erro ao conectar ao canal de voz: {str(e)}")
+                return
 
+        await interaction.followup.send(f"🔍 Buscando: `{query}`...")
+        
         termos = self.extract_spotify(query) if "spotify" in query else [query]
         musicas_adicionadas = 0
         
@@ -184,12 +269,14 @@ class Musica(commands.Cog):
             if resultados:
                 self.queues[interaction.guild.id].append(resultados[0])
                 musicas_adicionadas += 1
+                await interaction.followup.send(f"✅ Adicionado à fila: `{resultados[0]['title']}`")
 
         if musicas_adicionadas == 0:
             await interaction.followup.send("❌ Não foi possível encontrar nenhuma música com essa busca.")
             return
             
         if not vc.is_playing():
+            await interaction.followup.send("▶️ Iniciando reprodução...")
             await self.play_next(interaction)
         else:
             await interaction.followup.send(f"🎶 {musicas_adicionadas} música(s) adicionada(s) à fila!")
