@@ -6,29 +6,12 @@ import nextcord
 from nextcord import Interaction, Embed, ButtonStyle, SlashOption
 from nextcord.ui import View, Button
 from nextcord.ext import commands, tasks
-import yt_dlp
+import wavelink
+from wavelink.ext import spotify
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import traceback
-import urllib.request
-import json
-
-# Configurações do yt_dlp para busca (sem download)
-YDL_OPTIONS_SEARCH = {
-    "format": "bestaudio/best",
-    "quiet": True,
-    "cookiefile": "cookies.txt",
-    "default_search": "ytsearch",
-    "noplaylist": False,
-    "source_address": "0.0.0.0",
-    "nocheckcertificate": True,
-    "ignoreerrors": True,
-    "no_warnings": True,
-    "geo_bypass": True,
-    "geo_bypass_country": "BR",
-    "extractor_retries": 3,
-    "socket_timeout": 15
-}
+import re
 
 # Spotify
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -50,35 +33,52 @@ class MusicControlView(View):
 
     @nextcord.ui.button(emoji="⏯️", style=ButtonStyle.gray)
     async def toggle(self, button, interaction: Interaction):
-        vc = self.cog.get_voice(interaction.guild)
-        if vc.is_playing():
-            vc.pause()
-        elif vc.is_paused():
-            vc.resume()
-        await interaction.response.defer()
+        player = self.cog.get_player(interaction.guild)
+        if not player:
+            await interaction.response.send_message("❌ Não estou conectado a um canal de voz!", ephemeral=True)
+            return
+            
+        if player.is_playing():
+            await player.pause()
+            await interaction.response.send_message("⏸️ Música pausada", ephemeral=True)
+        else:
+            await player.resume()
+            await interaction.response.send_message("▶️ Música resumida", ephemeral=True)
 
     @nextcord.ui.button(emoji="⏭️", style=ButtonStyle.blurple)
     async def skip(self, button, interaction: Interaction):
-        vc = self.cog.get_voice(interaction.guild)
-        if vc.is_playing() or vc.is_paused():
-            vc.stop()
-        await interaction.response.defer()
+        player = self.cog.get_player(interaction.guild)
+        if not player or not player.is_playing():
+            await interaction.response.send_message("❌ Não estou tocando nada no momento!", ephemeral=True)
+            return
+            
+        await player.stop()
+        await interaction.response.send_message("⏭️ Pulando para a próxima música...")
 
     @nextcord.ui.button(emoji="🔀", style=ButtonStyle.gray)
     async def shuffle(self, button, interaction: Interaction):
-        queue = self.cog.queues.get(interaction.guild.id, [])
-        if queue:
-            import random
-            random.shuffle(queue)
-        await interaction.response.defer()
+        guild_id = interaction.guild.id
+        queue = self.cog.queues.get(guild_id, [])
+        if not queue:
+            await interaction.response.send_message("❌ A fila está vazia!", ephemeral=True)
+            return
+            
+        random.shuffle(queue)
+        self.cog.queues[guild_id] = queue
+        await interaction.response.send_message("🔀 Fila embaralhada!")
 
     @nextcord.ui.button(emoji="⏹️", style=ButtonStyle.red)
     async def stop(self, button, interaction: Interaction):
-        vc = self.get_voice(interaction.guild)
-        if vc:
-            await vc.disconnect()
-            self.cog.queues.pop(interaction.guild.id, None)
-        await interaction.response.defer()
+        player = self.cog.get_player(interaction.guild)
+        if not player:
+            await interaction.response.send_message("❌ Não estou conectado a um canal de voz!", ephemeral=True)
+            return
+            
+        guild_id = interaction.guild.id
+        self.cog.queues[guild_id] = []
+        self.cog.now_playing.pop(guild_id, None)
+        await player.disconnect()
+        await interaction.response.send_message("⏹️ Reprodução interrompida e fila limpa.")
 
 class QueuePaginatorView(View):
     def __init__(self, embeds):
@@ -109,149 +109,138 @@ class Musica(commands.Cog):
         self.queues = {}
         self.now_playing = {}
         self.autoleave.start()
-
-    def get_voice(self, guild):
-        return nextcord.utils.get(self.bot.voice_clients, guild=guild)
-
-    async def yt_search(self, query):
-        loop = asyncio.get_event_loop()
-        try:
-            # Tenta com as opções de busca
-            data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS_SEARCH).extract_info(query, download=False))
-            if "entries" in data and data["entries"]:
-                return [{"title": e.get("title", "Música sem título"), "url": e.get("webpage_url", ""), "webpage_url": e.get("webpage_url", "")} for e in data["entries"] if e and "webpage_url" in e]
-            if data and "webpage_url" in data:
-                return [{"title": data.get("title", "Música sem título"), "url": data.get("webpage_url", ""), "webpage_url": data.get("webpage_url", "")}]
-            return []
-        except Exception as e:
-            print(f"Erro ao buscar música: {e}")
-            traceback.print_exc()
-            
-            # Tenta uma abordagem alternativa para YouTube
-            if "youtube.com" in query or "youtu.be" in query:
-                try:
-                    # Extrai o ID do vídeo
-                    video_id = None
-                    if "youtube.com/watch?v=" in query:
-                        video_id = query.split("youtube.com/watch?v=")[1].split("&")[0]
-                    elif "youtu.be/" in query:
-                        video_id = query.split("youtu.be/")[1].split("?")[0]
-                    
-                    if video_id:
-                        # Tenta obter informações básicas
-                        title = f"Música do YouTube (ID: {video_id})"
-                        return [{"title": title, "url": query, "webpage_url": query}]
-                except Exception as e2:
-                    print(f"Erro ao processar link do YouTube: {e2}")
-            
-            return []
-
-    def extract_spotify(self, link):
+        
+    def get_player(self, guild):
+        return wavelink.NodePool.get_node().get_player(guild.id)
+        
+    async def extract_spotify(self, query):
+        """Extrai informações do Spotify e retorna termos de busca"""
         faixas = []
-        if not sp:
-            print("Credenciais do Spotify não configuradas. Usando link direto.")
-            return [link]  # Retorna o link original se o cliente Spotify não estiver disponível
+        
+        # Verificar se é um link do Spotify
+        spotify_pattern = r'https?://open\.spotify\.com/(?P<type>track|playlist|album)/(?P<id>[a-zA-Z0-9]+)'
+        match = re.match(spotify_pattern, query)
+        
+        if not match:
+            return [query]  # Não é um link do Spotify
             
+        spotify_type = match.group('type')
+        spotify_id = match.group('id')
+        
         try:
-            if "track" in link:
-                track = sp.track(link)
-                faixas.append(f"{track['name']} {track['artists'][0]['name']}")
-            elif "playlist" in link:
-                offset = 0
-                limit = 50  # Limite máximo por requisição
-                total_tracks = 0
-                
-                # Primeira requisição para obter o total
-                playlist_info = sp.playlist_items(link, limit=1, offset=0)
-                if "total" in playlist_info:
-                    total_tracks = min(playlist_info["total"], 50)  # Limitar a 50 faixas para evitar sobrecarga
-                
-                while offset < total_tracks:
-                    items = sp.playlist_items(link, limit=limit, offset=offset)["items"]
-                    if not items:
-                        break
-                    for item in items:
-                        if item.get("track") and item["track"].get("name") and item["track"].get("artists"):
-                            track_name = item["track"]["name"]
-                            artist_name = item["track"]["artists"][0]["name"]
-                            faixas.append(f"{track_name} {artist_name}")
-                    offset += len(items)
+            if spotify_type == 'track':
+                # Usar a biblioteca wavelink.ext.spotify para buscar
+                decoded = await spotify.SpotifyTrack.search(query=query)
+                if decoded:
+                    return [decoded[0]]
                     
-                print(f"Extraídas {len(faixas)} faixas da playlist Spotify")
-            return faixas if faixas else [link]
+            elif spotify_type == 'playlist' or spotify_type == 'album':
+                # Usar a biblioteca wavelink.ext.spotify para buscar
+                decoded = await spotify.SpotifyTrack.search(query=query)
+                if decoded:
+                    return decoded[:25]  # Limitar a 25 faixas para evitar sobrecarga
         except Exception as e:
-            print(f"Erro ao extrair do Spotify: {e}")
+            print(f"Erro ao decodificar link do Spotify com wavelink: {e}")
             traceback.print_exc()
-            return [link]  # Retorna o link original em caso de erro
+            
+            # Fallback: usar a biblioteca spotipy se disponível
+            if sp:
+                try:
+                    if spotify_type == 'track':
+                        track = sp.track(spotify_id)
+                        track_name = track['name']
+                        artist_name = track['artists'][0]['name']
+                        faixas.append(f"{track_name} {artist_name}")
+                    elif spotify_type == 'playlist':
+                        items = sp.playlist_items(spotify_id, limit=25)['items']
+                        for item in items:
+                            if item.get('track') and item['track'].get('name') and item['track'].get('artists'):
+                                track_name = item['track']['name']
+                                artist_name = item['track']['artists'][0]['name']
+                                faixas.append(f"{track_name} {artist_name}")
+                    elif spotify_type == 'album':
+                        items = sp.album_tracks(spotify_id, limit=25)['items']
+                        for item in items:
+                            if item.get('name') and item.get('artists'):
+                                track_name = item['name']
+                                artist_name = item['artists'][0]['name']
+                                faixas.append(f"{track_name} {artist_name}")
+                                
+                    return faixas if faixas else [query]
+                except Exception as e2:
+                    print(f"Erro ao extrair do Spotify com spotipy: {e2}")
+                    traceback.print_exc()
+                    
+        return [query]  # Retorna a consulta original se tudo falhar
 
     async def play_next(self, interaction):
         guild_id = interaction.guild.id
-        vc = self.get_voice(interaction.guild)
-        if not vc:
+        player = self.get_player(interaction.guild)
+        
+        if not player or not player.is_connected:
             return
-                
+            
         if not self.queues.get(guild_id) or len(self.queues[guild_id]) == 0:
             self.now_playing.pop(guild_id, None)
-            await vc.disconnect()
+            await player.disconnect()
             return
             
-        musica = self.queues[guild_id].pop(0)
-        self.now_playing[guild_id] = musica
+        track = self.queues[guild_id].pop(0)
+        self.now_playing[guild_id] = track
         
         try:
-            # Obter URL de áudio diretamente do YouTube
-            loop = asyncio.get_event_loop()
-            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS_SEARCH).extract_info(musica["url"], download=False))
+            # Tocar a faixa
+            await player.play(track)
             
-            if not info or "url" not in info:
-                await interaction.channel.send("❌ Não foi possível obter o áudio desta música. Pulando para a próxima...", delete_after=10)
-                if self.queues.get(guild_id) and len(self.queues[guild_id]) > 0:
-                    await self.play_next(interaction)
-                return
-            
-            # Usar o URL de áudio diretamente
-            audio_url = info["url"]
-            source = nextcord.FFmpegPCMAudio(audio_url)
-            
-            # Definir um callback seguro para quando a música terminar
-            def after_playing(error):
-                if error:
-                    print(f"Erro durante a reprodução: {error}")
-                # Usar create_task para evitar problemas com o loop de eventos
-                asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
-            
-            vc.play(source, after=after_playing)
-            
-            embed = Embed(title="🎧 Tocando agora", description=f"[{musica['title']}]({musica['webpage_url']})", color=0x1DB954)
+            # Criar embed para a música atual
+            if isinstance(track, wavelink.YouTubeTrack):
+                embed = Embed(
+                    title="🎧 Tocando agora", 
+                    description=f"[{track.title}]({track.uri})", 
+                    color=0x1DB954
+                )
+                embed.set_thumbnail(url=track.thumbnail)
+                embed.add_field(name="Duração", value=self.format_duration(track.duration))
+                
+            elif isinstance(track, spotify.SpotifyTrack):
+                embed = Embed(
+                    title="🎧 Tocando agora (Spotify)", 
+                    description=f"[{track.title}](https://open.spotify.com/track/{track.id})", 
+                    color=0x1DB954
+                )
+                if track.images:
+                    embed.set_thumbnail(url=track.images[0])
+                embed.add_field(name="Artista", value=track.author)
+                embed.add_field(name="Duração", value=self.format_duration(track.duration))
+                
+            else:
+                embed = Embed(
+                    title="🎧 Tocando agora", 
+                    description=f"{track.title}", 
+                    color=0x1DB954
+                )
+                
             await interaction.channel.send(embed=embed, view=MusicControlView(self))
+            
         except Exception as e:
             print(f"Erro ao iniciar reprodução: {e}")
             traceback.print_exc()
-            
-            # Tentar método alternativo sem FFmpeg
-            try:
-                print("Tentando método alternativo de reprodução...")
-                # Usar o URL diretamente sem FFmpeg
-                if "url" in info:
-                    source = nextcord.PCMVolumeTransformer(nextcord.FFmpegPCMAudio(info["url"]))
-                    
-                    def after_playing_alt(error):
-                        if error:
-                            print(f"Erro durante a reprodução alternativa: {error}")
-                        asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
-                    
-                    vc.play(source, after=after_playing_alt)
-                    
-                    embed = Embed(title="🎧 Tocando agora (método alternativo)", description=f"[{musica['title']}]({musica['webpage_url']})", color=0x1DB954)
-                    await interaction.channel.send(embed=embed, view=MusicControlView(self))
-                    return
-            except Exception as e2:
-                print(f"Erro no método alternativo: {e2}")
-                traceback.print_exc()
-            
             await interaction.channel.send(f"❌ Erro ao reproduzir: {str(e)[:100]}...", delete_after=10)
+            
+            # Tentar a próxima música
             if self.queues.get(guild_id) and len(self.queues[guild_id]) > 0:
                 await self.play_next(interaction)
+
+    def format_duration(self, duration_ms):
+        """Formata a duração em milissegundos para formato legível"""
+        seconds = int(duration_ms / 1000)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        else:
+            return f"{minutes}:{seconds:02d}"
 
     @nextcord.slash_command(name="tocar", description="Toque uma música ou playlist do YouTube/Spotify.")
     async def tocar(self, interaction: Interaction, query: str = SlashOption(description="Link ou nome da música")):
@@ -263,11 +252,13 @@ class Musica(commands.Cog):
         # Adiar a resposta para evitar timeout
         await interaction.response.defer(ephemeral=True)
         
+        # Obter ou criar player
+        player = self.get_player(interaction.guild)
+        
         # Conectar ao canal de voz se ainda não estiver conectado
-        vc = self.get_voice(interaction.guild)
-        if not vc:
+        if not player or not player.is_connected:
             try:
-                vc = await interaction.user.voice.channel.connect()
+                player = await interaction.user.voice.channel.connect(cls=wavelink.Player)
                 self.queues[interaction.guild.id] = []
             except Exception as e:
                 await interaction.followup.send(f"❌ Erro ao conectar ao canal de voz: {str(e)}", ephemeral=True)
@@ -277,26 +268,64 @@ class Musica(commands.Cog):
         await interaction.followup.send(f"🔍 Buscando: `{query}`...", ephemeral=True)
         
         # Processar links do Spotify ou buscar diretamente
-        termos = self.extract_spotify(query) if "spotify" in query else [query]
-        musicas_adicionadas = 0
+        tracks_to_add = []
         
-        # Buscar e adicionar músicas à fila
-        for termo in termos:
-            resultados = await self.yt_search(termo)
-            if resultados:
-                self.queues.setdefault(interaction.guild.id, []).append(resultados[0])
-                musicas_adicionadas += 1
+        try:
+            # Verificar se é um link do Spotify e extrair
+            if "spotify.com" in query:
+                tracks = await self.extract_spotify(query)
                 
-                # Enviar mensagem de sucesso (visível para todos)
-                await interaction.channel.send(f"✅ **{interaction.user.display_name}** adicionou à fila: `{resultados[0]['title']}`")
-
-        # Informar se nenhuma música foi encontrada (apenas para o usuário)
-        if musicas_adicionadas == 0:
+                # Se retornou uma lista de strings, buscar cada uma no YouTube
+                if tracks and isinstance(tracks[0], str):
+                    for track_query in tracks:
+                        search_result = await wavelink.YouTubeTrack.search(track_query)
+                        if search_result:
+                            tracks_to_add.append(search_result[0])
+                            
+                # Se retornou SpotifyTrack diretamente
+                elif tracks and isinstance(tracks[0], spotify.SpotifyTrack):
+                    tracks_to_add.extend(tracks)
+                    
+            # Link ou busca do YouTube
+            elif "youtube.com" in query or "youtu.be" in query:
+                tracks = await wavelink.YouTubeTrack.search(query)
+                if tracks:
+                    # Se for uma playlist, adicionar várias faixas
+                    if "&list=" in query or "playlist" in query:
+                        tracks_to_add.extend(tracks[:25])  # Limitar a 25 faixas
+                    else:
+                        tracks_to_add.append(tracks[0])
+            else:
+                # Busca normal
+                tracks = await wavelink.YouTubeTrack.search(query)
+                if tracks:
+                    tracks_to_add.append(tracks[0])
+        except Exception as e:
+            print(f"Erro ao buscar música: {e}")
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ Erro ao buscar música: {str(e)[:100]}...", ephemeral=True)
+            return
+            
+        # Verificar se encontrou alguma música
+        if not tracks_to_add:
             await interaction.followup.send("❌ Não foi possível encontrar nenhuma música com essa busca.", ephemeral=True)
             return
             
+        # Adicionar músicas à fila
+        guild_id = interaction.guild.id
+        for track in tracks_to_add:
+            self.queues.setdefault(guild_id, []).append(track)
+            
+            # Enviar mensagem de sucesso (visível para todos)
+            if track == tracks_to_add[0]:  # Apenas para a primeira música
+                await interaction.channel.send(f"✅ **{interaction.user.display_name}** adicionou à fila: `{track.title}`")
+                
+        # Informar quantas músicas foram adicionadas se for mais de uma
+        if len(tracks_to_add) > 1:
+            await interaction.followup.send(f"✅ Adicionadas {len(tracks_to_add)} músicas à fila!", ephemeral=True)
+            
         # Iniciar reprodução se não estiver tocando nada
-        if not vc.is_playing() and not vc.is_paused():
+        if not player.is_playing():
             await interaction.followup.send("▶️ Iniciando reprodução...", ephemeral=True)
             await self.play_next(interaction)
 
@@ -315,12 +344,43 @@ class Musica(commands.Cog):
         if self.now_playing.get(guild_id):
             current = self.now_playing[guild_id]
             embed = Embed(title="🎵 Fila de Reprodução", color=0x1DB954)
-            embed.add_field(name="🎧 Tocando agora:", value=f"[{current['title']}]({current['webpage_url']})", inline=False)
+            
+            # Adicionar informações da música atual
+            if isinstance(current, wavelink.YouTubeTrack):
+                embed.add_field(
+                    name="🎧 Tocando agora:", 
+                    value=f"[{current.title}]({current.uri})", 
+                    inline=False
+                )
+                if current.thumbnail:
+                    embed.set_thumbnail(url=current.thumbnail)
+                    
+            elif isinstance(current, spotify.SpotifyTrack):
+                embed.add_field(
+                    name="🎧 Tocando agora (Spotify):", 
+                    value=f"{current.title} - {current.author}", 
+                    inline=False
+                )
+                if current.images:
+                    embed.set_thumbnail(url=current.images[0])
+            else:
+                embed.add_field(
+                    name="🎧 Tocando agora:", 
+                    value=current.title, 
+                    inline=False
+                )
             
             # Adicionar as próximas músicas
             if fila:
-                for i, musica in enumerate(fila[:5], start=1):
-                    embed.add_field(name=f"{i}.", value=f"[{musica['title']}]({musica['webpage_url']})", inline=False)
+                for i, track in enumerate(fila[:5], start=1):
+                    if isinstance(track, (wavelink.YouTubeTrack, spotify.SpotifyTrack)):
+                        embed.add_field(
+                            name=f"{i}.", 
+                            value=f"{track.title} ({self.format_duration(track.duration)})", 
+                            inline=False
+                        )
+                    else:
+                        embed.add_field(name=f"{i}.", value=track.title, inline=False)
                 
                 if len(fila) > 5:
                     embed.set_footer(text=f"+ {len(fila) - 5} músicas na fila")
@@ -331,8 +391,15 @@ class Musica(commands.Cog):
             if len(fila) > 5:
                 for i in range(5, len(fila), 5):
                     embed = Embed(title="📜 Continuação da Fila", color=0x1DB954)
-                    for j, musica in enumerate(fila[i:i+5], start=i+1):
-                        embed.add_field(name=f"{j}.", value=f"[{musica['title']}]({musica['webpage_url']})", inline=False)
+                    for j, track in enumerate(fila[i:i+5], start=i+1):
+                        if isinstance(track, (wavelink.YouTubeTrack, spotify.SpotifyTrack)):
+                            embed.add_field(
+                                name=f"{j}.", 
+                                value=f"{track.title} ({self.format_duration(track.duration)})", 
+                                inline=False
+                            )
+                        else:
+                            embed.add_field(name=f"{j}.", value=track.title, inline=False)
                     embeds.append(embed)
         
         # Enviar a fila
@@ -346,45 +413,80 @@ class Musica(commands.Cog):
 
     @nextcord.slash_command(name="pular", description="Pula para a próxima música na fila.")
     async def pular(self, interaction: Interaction):
-        vc = self.get_voice(interaction.guild)
-        if not vc:
+        player = self.get_player(interaction.guild)
+        if not player or not player.is_connected:
             await interaction.response.send_message("❌ Não estou conectado a um canal de voz!", ephemeral=True)
             return
             
-        if not vc.is_playing() and not vc.is_paused():
+        if not player.is_playing():
             await interaction.response.send_message("❌ Não estou tocando nada no momento!", ephemeral=True)
             return
             
-        vc.stop()
+        await player.stop()
         await interaction.response.send_message("⏭️ Pulando para a próxima música...")
 
     @nextcord.slash_command(name="parar", description="Para a reprodução e limpa a fila.")
     async def parar(self, interaction: Interaction):
-        vc = self.get_voice(interaction.guild)
-        if not vc:
+        player = self.get_player(interaction.guild)
+        if not player or not player.is_connected:
             await interaction.response.send_message("❌ Não estou conectado a um canal de voz!", ephemeral=True)
             return
             
-        if interaction.guild.id in self.queues:
-            self.queues[interaction.guild.id] = []
+        guild_id = interaction.guild.id
+        if guild_id in self.queues:
+            self.queues[guild_id] = []
             
-        self.now_playing.pop(interaction.guild.id, None)
-        await vc.disconnect()
+        self.now_playing.pop(guild_id, None)
+        await player.disconnect()
         await interaction.response.send_message("⏹️ Reprodução interrompida e fila limpa.")
 
     @tasks.loop(minutes=1)
     async def autoleave(self):
-        for vc in self.bot.voice_clients:
-            if not vc.is_playing() and not vc.is_paused():
-                guild_id = vc.guild.id
-                if not hasattr(vc, "idle_since"):
-                    vc.idle_since = datetime.datetime.utcnow()
-                elif (datetime.datetime.utcnow() - vc.idle_since).seconds > 300:  # 5 minutos
-                    self.now_playing.pop(guild_id, None)
-                    self.queues.pop(guild_id, None)
-                    await vc.disconnect()
-            elif hasattr(vc, "idle_since"):
-                del vc.idle_since
+        for guild in self.bot.guilds:
+            player = self.get_player(guild)
+            if player and player.is_connected:
+                if not player.is_playing():
+                    guild_id = guild.id
+                    if not hasattr(player, "idle_since"):
+                        player.idle_since = datetime.datetime.utcnow()
+                    elif (datetime.datetime.utcnow() - player.idle_since).seconds > 300:  # 5 minutos
+                        self.now_playing.pop(guild_id, None)
+                        self.queues.pop(guild_id, None)
+                        await player.disconnect()
+                elif hasattr(player, "idle_since"):
+                    del player.idle_since
+
+    @autoleave.before_loop
+    async def before_autoleave(self):
+        await self.bot.wait_until_ready()
+
+    # Eventos do Wavelink
+    @commands.Cog.listener()
+    async def on_wavelink_track_end(self, player, track, reason):
+        if reason == "FINISHED" and player.guild:
+            interaction = player._last_interaction
+            if interaction:
+                await self.play_next(interaction)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(self, player, track, error):
+        if player.guild:
+            channel = player.guild.text_channels[0]  # Canal padrão
+            await channel.send(f"❌ Erro ao reproduzir a música: {error}")
+            
+            interaction = player._last_interaction
+            if interaction:
+                await self.play_next(interaction)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_stuck(self, player, track, threshold):
+        if player.guild:
+            channel = player.guild.text_channels[0]  # Canal padrão
+            await channel.send("⚠️ A música travou. Pulando para a próxima...")
+            
+            interaction = player._last_interaction
+            if interaction:
+                await self.play_next(interaction)
 
 def setup(bot):
     bot.add_cog(Musica(bot))
