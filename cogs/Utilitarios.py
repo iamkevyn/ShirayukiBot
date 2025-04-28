@@ -116,7 +116,7 @@ class Utilitarios(commands.Cog):
             "O calor do núcleo da Terra é tão intenso quanto a superfície do Sol."
         ]
 
-    @commands.slash_command(name="calculadora", description="Resolve uma expressão matemática básica.")
+    @nextcord.slash_command(name="calculadora", description="Resolve uma expressão matemática básica.")
     async def calculadora(self, interaction: Interaction, expressao: str):
         # Usar uma abordagem mais segura que eval()
         try:
@@ -146,7 +146,7 @@ class Utilitarios(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"❌ Expressão inválida: {str(e)}")
 
-    @commands.slash_command(name="clima", description="Mostra o clima atual de uma cidade.")
+    @nextcord.slash_command(name="clima", description="Mostra o clima atual de uma cidade.")
     async def clima(self, interaction: Interaction, cidade: str):
         api_key = os.getenv("OPENWEATHER_API")
         if not api_key:
@@ -179,12 +179,12 @@ class Utilitarios(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ Erro ao buscar clima: {str(e)}")
 
-    @commands.slash_command(name="dado", description="Rola um dado com X lados")
+    @nextcord.slash_command(name="dado", description="Rola um dado com X lados")
     async def dado(self, interaction: Interaction, lados: int = SlashOption(description="Número de lados do dado", min_value=2, max_value=1000, default=6)):
         numero = random.randint(1, lados)
         await interaction.response.send_message(f"🎲 Você rolou um d{lados}: **{numero}**")
 
-    @commands.slash_command(name="cronometro", description="Inicia um cronômetro temporizado")
+    @nextcord.slash_command(name="cronometro", description="Inicia um cronômetro temporizado")
     async def cronometro(self, interaction: Interaction, segundos: int = SlashOption(description="Duração em segundos", min_value=1, max_value=300)):
         if segundos > 60:
             await interaction.response.send_message(f"⏱️ Cronômetro iniciado por {segundos}s... Você será notificado quando terminar.", ephemeral=True)
@@ -198,7 +198,7 @@ class Utilitarios(commands.Cog):
         except Exception as e:
             print(f"Erro ao enviar notificação de cronômetro: {e}")
 
-    @commands.slash_command(name="enquete", description="Cria uma enquete com até 5 opções")
+    @nextcord.slash_command(name="enquete", description="Cria uma enquete com até 5 opções")
     async def enquete(self, interaction: Interaction, pergunta: str, opcoes: str):
         opcoes_lista = [x.strip() for x in opcoes.split(",")][:5]
         if len(opcoes_lista) < 2:
@@ -212,19 +212,19 @@ class Utilitarios(commands.Cog):
         view = EnqueteView(opcoes_lista)
         await interaction.response.send_message(embed=embed, view=view)
 
-    @commands.slash_command(name="quote", description="Receba uma citação aleatória")
+    @nextcord.slash_command(name="quote", description="Receba uma citação aleatória")
     async def quote(self, interaction: Interaction):
         await interaction.response.send_message(f"📜 *{random.choice(self.quotes)}*")
 
-    @commands.slash_command(name="curiosidade", description="Veja uma curiosidade aleatória")
+    @nextcord.slash_command(name="curiosidade", description="Veja uma curiosidade aleatória")
     async def curiosidade(self, interaction: Interaction):
         await interaction.response.send_message(f"🧠 {random.choice(self.curiosidades)}")
 
-    @commands.slash_command(name="sugestao", description="Envie uma sugestão para o bot")
+    @nextcord.slash_command(name="sugestao", description="Envie uma sugestão para o bot")
     async def sugestao(self, interaction: Interaction):
         await interaction.response.send_modal(SugestaoModal())
 
-    @commands.slash_command(name="numero_aleatorio", description="Gera um número entre dois valores")
+    @nextcord.slash_command(name="numero_aleatorio", description="Gera um número entre dois valores")
     async def numero_aleatorio(self, interaction: Interaction, 
                               minimo: int = SlashOption(description="Valor mínimo", default=1), 
                               maximo: int = SlashOption(description="Valor máximo", default=100)):
@@ -233,7 +233,7 @@ class Utilitarios(commands.Cog):
         else:
             await interaction.response.send_message(f"🎲 Número gerado: **{random.randint(minimo, maximo)}**")
 
-    @commands.slash_command(name="senha", description="Gera uma senha aleatória segura")
+    @nextcord.slash_command(name="senha", description="Gera uma senha aleatória segura")
     async def senha(self, interaction: Interaction, 
                    tamanho: int = SlashOption(description="Tamanho da senha", min_value=4, max_value=32, default=12),
                    incluir_maiusculas: bool = SlashOption(description="Incluir letras maiúsculas", default=True),
@@ -254,7 +254,7 @@ class Utilitarios(commands.Cog):
         # Enviar como mensagem efêmera para maior segurança
         await interaction.response.send_message(f"🔐 Sua senha gerada: `{senha}`", ephemeral=True)
 
-    @commands.slash_command(name="contagem", description="Faz uma contagem regressiva")
+    @nextcord.slash_command(name="contagem", description="Faz uma contagem regressiva")
     async def contagem(self, interaction: Interaction, segundos: int = SlashOption(description="Duração em segundos", min_value=1, max_value=15)):
         await interaction.response.defer()
         msg = await interaction.followup.send(f"⏱️ Contagem iniciada: {segundos}s")
@@ -266,7 +266,7 @@ class Utilitarios(commands.Cog):
         await asyncio.sleep(1)
         await msg.edit(content="🎉 Tempo encerrado!")
 
-    @commands.slash_command(name="github", description="Mostra info de um repositório do GitHub")
+    @nextcord.slash_command(name="github", description="Mostra info de um repositório do GitHub")
     async def github(self, interaction: Interaction, repositorio: str):
         await interaction.response.defer()
         
@@ -297,7 +297,7 @@ class Utilitarios(commands.Cog):
             await interaction.followup.send(f"❌ Erro ao buscar informações: {str(e)}")
 
     # Novo comando para tradução
-    @commands.slash_command(name="traduzir", description="Traduz um texto para outro idioma")
+    @nextcord.slash_command(name="traduzir", description="Traduz um texto para outro idioma")
     async def traduzir(self, interaction: Interaction, texto: str, idioma: str = SlashOption(
         description="Idioma de destino",
         choices={"Inglês": "en", "Espanhol": "es", "Francês": "fr", "Alemão": "de", "Italiano": "it", "Japonês": "ja"}
