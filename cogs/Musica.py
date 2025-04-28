@@ -3,36 +3,15 @@ import asyncio
 import datetime
 import random
 import nextcord
-from nextcord import Interaction, Embed, ButtonStyle, SlashOption, FFmpegOpusAudio
+from nextcord import Interaction, Embed, ButtonStyle, SlashOption
 from nextcord.ui import View, Button
 from nextcord.ext import commands, tasks
 import yt_dlp
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import traceback
-import uuid # Para nomes de arquivos temporários
-
-# Configurações do yt_dlp para download
-YDL_OPTIONS_DL = {
-    "format": "bestaudio/best",
-    "outtmpl": "/tmp/%(id)s.%(ext)s", # Salvar em /tmp
-    "quiet": True,
-    "cookiefile": "cookies.txt",
-    "noplaylist": True, # Baixar apenas uma faixa por vez
-    "source_address": "0.0.0.0",
-    "nocheckcertificate": True,
-    "ignoreerrors": True,
-    "no_warnings": True,
-    "geo_bypass": True,
-    "geo_bypass_country": "BR",
-    "extractor_retries": 3,
-    "socket_timeout": 20,
-    "postprocessors": [{
-        "key": "FFmpegExtractAudio",
-        "preferredcodec": "opus", # Opus é geralmente melhor para Discord
-        "preferredquality": "128",
-    }]
-}
+import urllib.request
+import json
 
 # Configurações do yt_dlp para busca (sem download)
 YDL_OPTIONS_SEARCH = {
@@ -95,7 +74,7 @@ class MusicControlView(View):
 
     @nextcord.ui.button(emoji="⏹️", style=ButtonStyle.red)
     async def stop(self, button, interaction: Interaction):
-        vc = self.cog.get_voice(interaction.guild)
+        vc = self.get_voice(interaction.guild)
         if vc:
             await vc.disconnect()
             self.cog.queues.pop(interaction.guild.id, None)
@@ -129,7 +108,6 @@ class Musica(commands.Cog):
         self.bot = bot
         self.queues = {}
         self.now_playing = {}
-        self.downloaded_files = {}
         self.autoleave.start()
 
     def get_voice(self, guild):
@@ -140,7 +118,7 @@ class Musica(commands.Cog):
         try:
             # Tenta com as opções de busca
             data = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS_SEARCH).extract_info(query, download=False))
-            if "entries" in data:
+            if "entries" in data and data["entries"]:
                 return [{"title": e.get("title", "Música sem título"), "url": e.get("webpage_url", ""), "webpage_url": e.get("webpage_url", "")} for e in data["entries"] if e and "webpage_url" in e]
             if data and "webpage_url" in data:
                 return [{"title": data.get("title", "Música sem título"), "url": data.get("webpage_url", ""), "webpage_url": data.get("webpage_url", "")}]
@@ -148,31 +126,25 @@ class Musica(commands.Cog):
         except Exception as e:
             print(f"Erro ao buscar música: {e}")
             traceback.print_exc()
+            
+            # Tenta uma abordagem alternativa para YouTube
+            if "youtube.com" in query or "youtu.be" in query:
+                try:
+                    # Extrai o ID do vídeo
+                    video_id = None
+                    if "youtube.com/watch?v=" in query:
+                        video_id = query.split("youtube.com/watch?v=")[1].split("&")[0]
+                    elif "youtu.be/" in query:
+                        video_id = query.split("youtu.be/")[1].split("?")[0]
+                    
+                    if video_id:
+                        # Tenta obter informações básicas
+                        title = f"Música do YouTube (ID: {video_id})"
+                        return [{"title": title, "url": query, "webpage_url": query}]
+                except Exception as e2:
+                    print(f"Erro ao processar link do YouTube: {e2}")
+            
             return []
-
-    async def download_audio(self, url):
-        loop = asyncio.get_event_loop()
-        try:
-            # Tenta baixar o áudio
-            ydl = yt_dlp.YoutubeDL(YDL_OPTIONS_DL)
-            info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
-            filename = ydl.prepare_filename(info)
-            # Corrigir extensão se necessário (yt-dlp pode salvar como .webm, mas o postprocessor converte para .opus)
-            base, _ = os.path.splitext(filename)
-            opus_filename = base + ".opus"
-            if os.path.exists(opus_filename):
-                print(f"Áudio baixado e convertido para Opus: {opus_filename}")
-                return opus_filename
-            elif os.path.exists(filename):
-                 print(f"Áudio baixado (formato original): {filename}")
-                 return filename # Retorna o nome original se a conversão falhou
-            else:
-                print(f"Erro: Arquivo de áudio não encontrado após download: {filename} ou {opus_filename}")
-                return None
-        except Exception as e:
-            print(f"Erro ao baixar/preparar áudio: {e}")
-            traceback.print_exc()
-            return None
 
     def extract_spotify(self, link):
         faixas = []
@@ -183,7 +155,7 @@ class Musica(commands.Cog):
         try:
             if "track" in link:
                 track = sp.track(link)
-                faixas.append(f"{track["name"]} {track["artists"][0]["name"]}")
+                faixas.append(f"{track['name']} {track['artists'][0]['name']}")
             elif "playlist" in link:
                 offset = 0
                 limit = 50  # Limite máximo por requisição
@@ -217,15 +189,6 @@ class Musica(commands.Cog):
         vc = self.get_voice(interaction.guild)
         if not vc:
             return
-            
-        # Limpar arquivo anterior se existir
-        old_file = self.downloaded_files.pop(guild_id, None)
-        if old_file and os.path.exists(old_file):
-            try:
-                os.remove(old_file)
-                print(f"Arquivo temporário removido: {old_file}")
-            except OSError as e:
-                print(f"Erro ao remover arquivo temporário {old_file}: {e}")
                 
         if not self.queues.get(guild_id) or len(self.queues[guild_id]) == 0:
             self.now_playing.pop(guild_id, None)
@@ -236,43 +199,56 @@ class Musica(commands.Cog):
         self.now_playing[guild_id] = musica
         
         try:
-            # Baixar o áudio
-            filename = await self.download_audio(musica["url"])
-            if not filename:
-                await interaction.channel.send("❌ Não foi possível baixar/preparar esta música. Pulando para a próxima...", delete_after=10)
+            # Obter URL de áudio diretamente do YouTube
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(YDL_OPTIONS_SEARCH).extract_info(musica["url"], download=False))
+            
+            if not info or "url" not in info:
+                await interaction.channel.send("❌ Não foi possível obter o áudio desta música. Pulando para a próxima...", delete_after=10)
                 if self.queues.get(guild_id) and len(self.queues[guild_id]) > 0:
                     await self.play_next(interaction)
                 return
-                
-            self.downloaded_files[guild_id] = filename # Armazenar nome para limpeza posterior
             
-            # Tocar o arquivo local usando FFmpegOpusAudio (mais recomendado)
-            source = await FFmpegOpusAudio.from_probe(filename)
+            # Usar o URL de áudio diretamente
+            audio_url = info["url"]
+            source = nextcord.FFmpegPCMAudio(audio_url)
             
             # Definir um callback seguro para quando a música terminar
             def after_playing(error):
                 if error:
                     print(f"Erro durante a reprodução: {error}")
-                # Limpar o arquivo após a reprodução
-                if filename and os.path.exists(filename):
-                    try:
-                        os.remove(filename)
-                        print(f"Arquivo temporário removido após reprodução: {filename}")
-                        # Remover da lista se ainda estiver lá (caso haja pulo rápido)
-                        if self.downloaded_files.get(guild_id) == filename:
-                             self.downloaded_files.pop(guild_id, None)
-                    except OSError as e:
-                        print(f"Erro ao remover arquivo temporário {filename} após reprodução: {e}")
-                # Tocar a próxima música
+                # Usar create_task para evitar problemas com o loop de eventos
                 asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
             
             vc.play(source, after=after_playing)
             
-            embed = Embed(title="🎧 Tocando agora", description=f"[{musica["title"]}]({musica["webpage_url"]})", color=0x1DB954)
+            embed = Embed(title="🎧 Tocando agora", description=f"[{musica['title']}]({musica['webpage_url']})", color=0x1DB954)
             await interaction.channel.send(embed=embed, view=MusicControlView(self))
         except Exception as e:
             print(f"Erro ao iniciar reprodução: {e}")
             traceback.print_exc()
+            
+            # Tentar método alternativo sem FFmpeg
+            try:
+                print("Tentando método alternativo de reprodução...")
+                # Usar o URL diretamente sem FFmpeg
+                if "url" in info:
+                    source = nextcord.PCMVolumeTransformer(nextcord.FFmpegPCMAudio(info["url"]))
+                    
+                    def after_playing_alt(error):
+                        if error:
+                            print(f"Erro durante a reprodução alternativa: {error}")
+                        asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
+                    
+                    vc.play(source, after=after_playing_alt)
+                    
+                    embed = Embed(title="🎧 Tocando agora (método alternativo)", description=f"[{musica['title']}]({musica['webpage_url']})", color=0x1DB954)
+                    await interaction.channel.send(embed=embed, view=MusicControlView(self))
+                    return
+            except Exception as e2:
+                print(f"Erro no método alternativo: {e2}")
+                traceback.print_exc()
+            
             await interaction.channel.send(f"❌ Erro ao reproduzir: {str(e)[:100]}...", delete_after=10)
             if self.queues.get(guild_id) and len(self.queues[guild_id]) > 0:
                 await self.play_next(interaction)
@@ -312,7 +288,7 @@ class Musica(commands.Cog):
                 musicas_adicionadas += 1
                 
                 # Enviar mensagem de sucesso (visível para todos)
-                await interaction.channel.send(f"✅ **{interaction.user.display_name}** adicionou à fila: `{resultados[0]["title"]}`")
+                await interaction.channel.send(f"✅ **{interaction.user.display_name}** adicionou à fila: `{resultados[0]['title']}`")
 
         # Informar se nenhuma música foi encontrada (apenas para o usuário)
         if musicas_adicionadas == 0:
@@ -339,12 +315,12 @@ class Musica(commands.Cog):
         if self.now_playing.get(guild_id):
             current = self.now_playing[guild_id]
             embed = Embed(title="🎵 Fila de Reprodução", color=0x1DB954)
-            embed.add_field(name="🎧 Tocando agora:", value=f"[{current["title"]}]({current["webpage_url"]})", inline=False)
+            embed.add_field(name="🎧 Tocando agora:", value=f"[{current['title']}]({current['webpage_url']})", inline=False)
             
             # Adicionar as próximas músicas
             if fila:
                 for i, musica in enumerate(fila[:5], start=1):
-                    embed.add_field(name=f"{i}.", value=f"[{musica["title"]}]({musica["webpage_url"]})", inline=False)
+                    embed.add_field(name=f"{i}.", value=f"[{musica['title']}]({musica['webpage_url']})", inline=False)
                 
                 if len(fila) > 5:
                     embed.set_footer(text=f"+ {len(fila) - 5} músicas na fila")
@@ -356,7 +332,7 @@ class Musica(commands.Cog):
                 for i in range(5, len(fila), 5):
                     embed = Embed(title="📜 Continuação da Fila", color=0x1DB954)
                     for j, musica in enumerate(fila[i:i+5], start=i+1):
-                        embed.add_field(name=f"{j}.", value=f"[{musica["title"]}]({musica["webpage_url"]})", inline=False)
+                        embed.add_field(name=f"{j}.", value=f"[{musica['title']}]({musica['webpage_url']})", inline=False)
                     embeds.append(embed)
         
         # Enviar a fila
@@ -393,15 +369,6 @@ class Musica(commands.Cog):
             self.queues[interaction.guild.id] = []
             
         self.now_playing.pop(interaction.guild.id, None)
-        # Limpar arquivo atual se existir
-        old_file = self.downloaded_files.pop(interaction.guild.id, None)
-        if old_file and os.path.exists(old_file):
-            try:
-                os.remove(old_file)
-                print(f"Arquivo temporário removido ao parar: {old_file}")
-            except OSError as e:
-                print(f"Erro ao remover arquivo temporário {old_file} ao parar: {e}")
-                
         await vc.disconnect()
         await interaction.response.send_message("⏹️ Reprodução interrompida e fila limpa.")
 
@@ -415,14 +382,6 @@ class Musica(commands.Cog):
                 elif (datetime.datetime.utcnow() - vc.idle_since).seconds > 300:  # 5 minutos
                     self.now_playing.pop(guild_id, None)
                     self.queues.pop(guild_id, None)
-                    # Limpar arquivo atual se existir
-                    old_file = self.downloaded_files.pop(guild_id, None)
-                    if old_file and os.path.exists(old_file):
-                        try:
-                            os.remove(old_file)
-                            print(f"Arquivo temporário removido por inatividade: {old_file}")
-                        except OSError as e:
-                            print(f"Erro ao remover arquivo temporário {old_file} por inatividade: {e}")
                     await vc.disconnect()
             elif hasattr(vc, "idle_since"):
                 del vc.idle_since
