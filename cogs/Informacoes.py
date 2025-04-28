@@ -44,8 +44,12 @@ class InfoSelect(Select):
 
         elif label == "Usuário":
             user = interaction.user
+            avatar_url = user.default_avatar.url
+            if user.avatar:
+                avatar_url = user.avatar.url
+            
             embed = Embed(title="👤 Informações do Usuário", color=0x3498db)
-            embed.set_thumbnail(url=user.avatar.url if user.avatar else user.default_avatar.url)
+            embed.set_thumbnail(url=avatar_url)
             embed.add_field(name="Nome", value=user.name, inline=True)
             embed.add_field(name="ID", value=user.id, inline=True)
             embed.add_field(name="Criador?", value="Sim" if user.id == CRIADOR_ID else "Não", inline=True)
@@ -54,11 +58,17 @@ class InfoSelect(Select):
         elif label == "Servidor":
             guild = interaction.guild
             embed = Embed(title="🌐 Informações do Servidor", color=0x2ecc71)
-            embed.set_thumbnail(url=guild.icon.url if guild.icon else "")
+            
+            if guild.icon:
+                embed.set_thumbnail(url=guild.icon.url)
+                
             embed.add_field(name="Nome", value=guild.name, inline=True)
             embed.add_field(name="ID", value=guild.id, inline=True)
             embed.add_field(name="Membros", value=guild.member_count, inline=True)
-            embed.add_field(name="Criador", value=guild.owner.mention, inline=True)
+            
+            if guild.owner:
+                embed.add_field(name="Criador", value=guild.owner.mention, inline=True)
+                
             embed.add_field(name="Impulsos", value=guild.premium_subscription_count or 0, inline=True)
             embed.add_field(name="Nível de Impulso", value=str(guild.premium_tier), inline=True)
             embed.set_footer(text="Servidor incrível!")
@@ -75,16 +85,23 @@ class InfoSelect(Select):
 
         elif label == "Avatar":
             user = interaction.user
-            avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
+            avatar_url = user.default_avatar.url
+            if user.avatar:
+                avatar_url = user.avatar.url
+                
             embed = Embed(title=f"🖼️ Avatar de {user.name}", color=0x9b59b6)
             embed.set_image(url=avatar_url)
 
         elif label == "Uptime":
             now = datetime.datetime.utcnow()
-            delta = now - interaction.client.get_cog("Informacoes").start_time
-            hours, remainder = divmod(int(delta.total_seconds()), 3600)
-            minutes, seconds = divmod(remainder, 60)
-            embed = Embed(title="⏱️ Uptime do Bot", description=f"{hours}h {minutes}m {seconds}s", color=0xf39c12)
+            cog = interaction.client.get_cog("Informacoes")
+            if cog and hasattr(cog, "start_time"):
+                delta = now - cog.start_time
+                hours, remainder = divmod(int(delta.total_seconds()), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                embed = Embed(title="⏱️ Uptime do Bot", description=f"{hours}h {minutes}m {seconds}s", color=0xf39c12)
+            else:
+                embed = Embed(title="⏱️ Uptime do Bot", description="Informação não disponível", color=0xf39c12)
 
         elif label == "Cargos":
             user = interaction.user
@@ -93,12 +110,16 @@ class InfoSelect(Select):
             embed = Embed(title=f"👥 Cargos de {user.display_name}", description=roles_str, color=0xe67e22)
 
         elif label == "Banner":
-            user = await interaction.client.fetch_user(interaction.user.id)
-            embed = Embed(title=f"🖼️ Banner de {user.name}", color=0x1abc9c)
-            if user.banner:
-                embed.set_image(url=user.banner.url)
-            else:
-                embed.description = "❌ Esse usuário não possui um banner."
+            try:
+                user = await interaction.client.fetch_user(interaction.user.id)
+                embed = Embed(title=f"🖼️ Banner de {user.name}", color=0x1abc9c)
+                if user.banner:
+                    embed.set_image(url=user.banner.url)
+                else:
+                    embed.description = "❌ Esse usuário não possui um banner."
+            except Exception as e:
+                embed = Embed(title=f"🖼️ Banner", description="Não foi possível obter o banner", color=0x1abc9c)
+                print(f"Erro ao buscar banner: {e}")
 
         elif label == "Emojis":
             guild = interaction.guild
