@@ -1,4 +1,4 @@
-# /home/ubuntu/jsbot/main.py (MODIFICADO - IGNORA COGS COM ERRO)
+# /home/ubuntu/jsbot/main.py (FINAL - IGNORA ERROS COG + Trata Wavelink.ext)
 import os
 import nextcord
 from nextcord.ext import commands
@@ -7,21 +7,23 @@ import traceback # Importar o módulo traceback
 import sys # Para sys.exit em caso de erro crítico
 import asyncio # Para wavelink
 import wavelink # Para Lavalink
-from wavelink.ext import spotify # Para integração Spotify
 
-print("--- Iniciando Bot (Modo Tolerante a Falhas) ---")
+print("--- Iniciando Bot (Modo Tolerante a Falhas v2) ---")
 
-# Se estiver usando Replit ou Railway com webserver opcional:
+# Tentar importar a extensão Spotify, mas não falhar se não encontrar
 try:
-    from keep_alive import keep_alive
-    print("-> Tentando iniciar keep_alive...")
-    keep_alive()
-    print("-> keep_alive iniciado (se aplicável).")
-except ImportError:
-    print("-> Módulo 'keep_alive' não encontrado, ignorando...")
+    from wavelink.ext import spotify
+    spotify_ext_available = True
+    print("-> Extensão wavelink.ext.spotify importada com sucesso.")
+except ModuleNotFoundError:
+    print("⚠️ AVISO: Módulo 'wavelink.ext' não encontrado. A integração com Spotify estará desativada.")
+    spotify = None # Definir como None para verificações posteriores
+    spotify_ext_available = False
 except Exception as e:
-    print("❌ Erro ao iniciar keep_alive:")
+    print("❌ Erro inesperado ao importar wavelink.ext.spotify:")
     traceback.print_exc()
+    spotify = None
+    spotify_ext_available = False
 
 # Carregar variáveis de ambiente do .env
 print("-> Carregando variáveis de ambiente...")
@@ -72,22 +74,30 @@ class MusicBot(commands.Bot):
             return
 
         print("-> Tentando conectar ao nó Lavalink...")
-        # Configurar cliente Spotify para wavelink se as credenciais estiverem disponíveis
+        # Configurar cliente Spotify para wavelink APENAS se a extensão e as credenciais estiverem disponíveis
         spotify_client = None
-        if spotify_client_id and spotify_client_secret:
-            spotify_client = spotify.SpotifyClient(
-                client_id=spotify_client_id,
-                client_secret=spotify_client_secret
-            )
-            print("-> Cliente Spotify para Wavelink configurado.")
+        if spotify_ext_available and spotify_client_id and spotify_client_secret:
+            try:
+                spotify_client = spotify.SpotifyClient(
+                    client_id=spotify_client_id,
+                    client_secret=spotify_client_secret
+                )
+                print("-> Cliente Spotify para Wavelink configurado.")
+            except Exception as e:
+                 print("❌ Erro ao inicializar SpotifyClient:")
+                 traceback.print_exc()
+                 spotify_client = None # Garantir que é None se falhar
         else:
-            print("-> Cliente Spotify para Wavelink não configurado (credenciais ausentes).")
+            if not spotify_ext_available:
+                print("-> Cliente Spotify para Wavelink não configurado (extensão wavelink.ext indisponível).")
+            else:
+                print("-> Cliente Spotify para Wavelink não configurado (credenciais ausentes).")
 
         try:
             node: wavelink.Node = wavelink.Node(
                 uri=lava_uri,
                 password=lava_pass,
-                spotify_client=spotify_client
+                spotify_client=spotify_client # Passa o cliente (ou None)
             )
             await wavelink.NodePool.connect(client=self, nodes=[node])
             print(f"✅ Conectado ao nó Lavalink em {lava_uri}")
@@ -119,21 +129,21 @@ async def on_ready():
 # Evento Wavelink para status do nó
 @bot.event
 async def on_wavelink_node_ready(node: wavelink.Node):
-    print(f"✅ Nó Lavalink '{node.identifier}' está pronto!")
+    print(f"✅ Nó Lavalink 	'{node.identifier}	' está pronto!")
 
 # Carrega os COGs da pasta 'cogs' com tratamento de erros aprimorado
-print("\n--- Carregando COGs (Modo Tolerante a Falhas) ---")
+print("\n--- Carregando COGs (Modo Tolerante a Falhas v2) ---")
 cogs_dir = "./cogs"
 if not os.path.isdir(cogs_dir):
-    print(f"❌ Erro: Diretório de COGs '{cogs_dir}' não encontrado.")
+    print(f"❌ Erro: Diretório de COGs 	'{cogs_dir}	' não encontrado.")
 else:
     try:
         all_files = os.listdir(cogs_dir)
-        print(f"-> Arquivos encontrados em '{cogs_dir}': {all_files}")
+        print(f"-> Arquivos encontrados em 	'{cogs_dir}	': {all_files}")
         cog_files = [f for f in all_files if f.endswith(".py") and not f.startswith("__")]
         print(f"-> Arquivos .py a serem carregados: {cog_files}")
     except Exception as e:
-        print(f"❌ Erro ao listar arquivos em '{cogs_dir}':")
+        print(f"❌ Erro ao listar arquivos em 	'{cogs_dir}	':")
         traceback.print_exc()
         cog_files = []
 
@@ -155,6 +165,7 @@ else:
             print(f"⚠️ Aviso: {filename} já estava carregado.")
             cogs_loaded.append(filename)  # Consideramos como carregado
         except Exception as e:
+            # Imprime o erro detalhado para QUALQUER cog que falhar
             print(f"❌ Erro ao carregar {filename}:")
             traceback.print_exc()
             cogs_failed.append(f"{filename} ({type(e).__name__})")
@@ -164,9 +175,9 @@ else:
     loaded_extensions = list(bot.extensions.keys())
     print(f"\n=== RESUMO DO CARREGAMENTO DE COGS ===")
     print(f"-> Total de cogs encontrados: {len(cog_files)}")
-    print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
-    print(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
-    print(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
+    print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {	', 	'.join(cogs_loaded) if cogs_loaded else 	'Nenhum	'}")
+    print(f"-> Cogs que falharam ({len(cogs_failed)}): {	', 	'.join(cogs_failed) if cogs_failed else 	'Nenhum	'}")
+    print(f"-> Extensões ativas ({len(loaded_extensions)}): {	', 	'.join(loaded_extensions) if loaded_extensions else 	'Nenhuma	'}")
     print("=== FIM DO RESUMO ===\n")
 
 # Executa o bot
