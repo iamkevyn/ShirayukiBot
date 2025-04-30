@@ -80,24 +80,7 @@ class MusicBot(commands.Bot):
             return
 
         print("-> Tentando conectar ao nó Lavalink em connect_nodes...")
-        # Configurar cliente Spotify para wavelink APENAS se a extensão e as credenciais estiverem disponíveis
-        spotify_client = None
-        if spotify_ext_available and spotify_client_id and spotify_client_secret:
-            try:
-                spotify_client = spotify.SpotifyClient(
-                    client_id=spotify_client_id,
-                    client_secret=spotify_client_secret
-                )
-                print("-> Cliente Spotify para Wavelink configurado.")
-            except Exception as e:
-                 print("❌ Erro ao inicializar SpotifyClient:")
-                 traceback.print_exc()
-                 spotify_client = None # Garantir que é None se falhar
-        else:
-            if not spotify_ext_available:
-                print("-> Cliente Spotify para Wavelink não configurado (extensão wavelink.ext indisponível).")
-            else:
-                print("-> Cliente Spotify para Wavelink não configurado (credenciais ausentes).")
+        # REMOVIDO: Configuração manual do SpotifyClient. Assumindo Lavalink com LavaSrc.
 
         try:
             node: wavelink.Node = wavelink.Node(
