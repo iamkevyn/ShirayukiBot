@@ -1,4 +1,4 @@
-# /home/ubuntu/jsbot/main.py (FINAL - IGNORA ERROS COG + Trata Wavelink.ext)
+# /home/ubuntu/jsbot/main.py (MODIFICADO COM setup_hook)
 import os
 import nextcord
 from nextcord.ext import commands
@@ -60,20 +60,26 @@ print("-> Inicializando o Bot...")
 class MusicBot(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Só tenta conectar ao Lavalink se as credenciais existirem
+        # A conexão com Lavalink agora é feita no setup_hook
+
+    async def setup_hook(self) -> None:
+        """Hook executado após o login, ideal para conexões assíncronas."""
+        print("-> Executando setup_hook...")
         if lava_uri and lava_pass:
-            self.loop.create_task(self.connect_nodes())
+            await self.connect_nodes()
         else:
-            print("-> Conexão com Lavalink pulada (credenciais ausentes).")
+            print("-> Conexão com Lavalink pulada em setup_hook (credenciais ausentes).")
+        # Carregar COGs aqui também é uma boa prática
+        await self.load_cogs()
 
     async def connect_nodes(self):
         """Conecta aos nós Lavalink."""
-        await self.wait_until_ready() # Espera o bot estar pronto
+        # await self.wait_until_ready() # Não é mais necessário aqui, setup_hook roda após login
         if not lava_uri or not lava_pass:
             print("❌ Erro: Credenciais do Lavalink não configuradas. Não é possível conectar ao nó.")
             return
 
-        print("-> Tentando conectar ao nó Lavalink...")
+        print("-> Tentando conectar ao nó Lavalink em connect_nodes...")
         # Configurar cliente Spotify para wavelink APENAS se a extensão e as credenciais estiverem disponíveis
         spotify_client = None
         if spotify_ext_available and spotify_client_id and spotify_client_secret:
@@ -97,23 +103,78 @@ class MusicBot(commands.Bot):
             node: wavelink.Node = wavelink.Node(
                 uri=lava_uri,
                 password=lava_pass,
+                # Se você estiver usando LavaSrc ou similar que suporte Spotify diretamente no Lavalink,
+                # você NÃO precisa passar spotify_client aqui.
+                # Se você REALMENTE precisar do wavelink.ext.spotify (menos comum agora),
+                # o parâmetro seria passado para NodePool.connect, não Node().
+                # Vamos manter simples por enquanto.
             )
+            # Passar o spotify_client para o Pool.connect se aplicável (verificar documentação do Wavelink v3+)
+            # Para LavaSrc, geralmente não é necessário passar nada aqui.
             await wavelink.NodePool.connect(client=self, nodes=[node])
-            print(f"✅ Conectado ao nó Lavalink em {lava_uri}")
+            print(f"✅ Conexão com o nó Lavalink iniciada via NodePool.connect.")
         except Exception as e:
-            print(f"❌ Erro ao conectar ao nó Lavalink:")
+            print(f"❌ Erro ao iniciar conexão com o nó Lavalink:")
             traceback.print_exc()
             print("⚠️ O bot continuará funcionando, mas sem recursos de música.")
 
+    async def load_cogs(self):
+        """Carrega os COGs da pasta 'cogs'."""
+        print("\n--- Carregando COGs (via setup_hook) ---")
+        cogs_dir = "./cogs"
+        if not os.path.isdir(cogs_dir):
+            print(f"❌ Erro: Diretório de COGs '{cogs_dir}' não encontrado.")
+            return
+
+        try:
+            all_files = os.listdir(cogs_dir)
+            print(f"-> Arquivos encontrados em '{cogs_dir}': {all_files}")
+            cog_files = [f for f in all_files if f.endswith(".py") and not f.startswith("__")]
+            print(f"-> Arquivos .py a serem carregados: {cog_files}")
+        except Exception as e:
+            print(f"❌ Erro ao listar arquivos em '{cogs_dir}':")
+            traceback.print_exc()
+            cog_files = []
+
+        cogs_loaded = []
+        cogs_failed = []
+
+        for filename in cog_files:
+            cog_path = f"cogs.{filename[:-3]}"
+            print(f"--> Tentando carregar: {cog_path}")
+            try:
+                self.load_extension(cog_path)
+                print(f"✅ COG carregado com sucesso: {filename}")
+                cogs_loaded.append(filename)
+            except commands.errors.NoEntryPointError:
+                print(f"⚠️ Aviso: {filename} não possui a função setup() e não pode ser carregado como cog.")
+                cogs_failed.append(f"{filename} (sem setup)")
+            except commands.errors.ExtensionAlreadyLoaded:
+                print(f"⚠️ Aviso: {filename} já estava carregado.")
+                cogs_loaded.append(filename)
+            except Exception as e:
+                print(f"❌ Erro ao carregar {filename}:")
+                traceback.print_exc()
+                cogs_failed.append(f"{filename} ({type(e).__name__})")
+                print(f"⚠️ Ignorando erro e continuando com os próximos cogs...")
+
+        loaded_extensions = list(self.extensions.keys())
+        print(f"\n=== RESUMO DO CARREGAMENTO DE COGS ===")
+        print(f"-> Total de cogs encontrados: {len(cog_files)}")
+        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
+        print(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
+        print(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
+        print("=== FIM DO RESUMO ===\n")
+
 bot = MusicBot(command_prefix="!", intents=intents)
-print("-> Bot inicializado.")
+print("-> Bot instanciado.")
 
 @bot.event
 async def on_ready():
     print(f"\n✅ {bot.user.name} está online e pronto!")
-    print("-> Tentando sincronizar comandos slash...")
+    # A sincronização de comandos pode ser movida para setup_hook também, mas on_ready ainda funciona.
+    print("-> Tentando sincronizar comandos slash em on_ready...")
     try:
-        # Sincronizar comandos
         synced = await bot.sync_application_commands()
         if synced is not None:
             print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
@@ -127,57 +188,21 @@ async def on_ready():
 
 # Evento Wavelink para status do nó
 @bot.event
-async def on_wavelink_node_ready(node: wavelink.Node):
-    print(f"✅ Nó Lavalink 	'{node.identifier}	' está pronto!")
+async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
+    # Este evento é crucial para saber quando o nó está realmente pronto.
+    node = payload.node
+    session_id = payload.session_id
+    print(f"✅ Nó Lavalink '{node.identifier}' (Sessão: {session_id}) está pronto e conectado!")
 
-# Carrega os COGs da pasta 'cogs' com tratamento de erros aprimorado
-print("\n--- Carregando COGs (Modo Tolerante a Falhas v2) ---")
-cogs_dir = "./cogs"
-if not os.path.isdir(cogs_dir):
-    print(f"❌ Erro: Diretório de COGs 	'{cogs_dir}	' não encontrado.")
-else:
-    try:
-        all_files = os.listdir(cogs_dir)
-        print(f"-> Arquivos encontrados em 	'{cogs_dir}	': {all_files}")
-        cog_files = [f for f in all_files if f.endswith(".py") and not f.startswith("__")]
-        print(f"-> Arquivos .py a serem carregados: {cog_files}")
-    except Exception as e:
-        print(f"❌ Erro ao listar arquivos em 	'{cogs_dir}	':")
-        traceback.print_exc()
-        cog_files = []
+@bot.event
+async def on_wavelink_node_disconnected(payload: wavelink.NodeDisconnectedEventPayload):
+    node = payload.node
+    reason = payload.reason
+    code = payload.code
+    print(f"⚠️ Nó Lavalink '{node.identifier}' desconectado! Razão: {reason} (Código: {code})")
+    # Wavelink tentará reconectar por padrão.
 
-    # Listas para acompanhar o status do carregamento
-    cogs_loaded = []
-    cogs_failed = []
-
-    for filename in cog_files:
-        cog_path = f"cogs.{filename[:-3]}"
-        print(f"--> Tentando carregar: {cog_path}")
-        try:
-            bot.load_extension(cog_path)
-            print(f"✅ COG carregado com sucesso: {filename}")
-            cogs_loaded.append(filename)
-        except commands.errors.NoEntryPointError:
-            print(f"⚠️ Aviso: {filename} não possui a função setup() e não pode ser carregado como cog.")
-            cogs_failed.append(f"{filename} (sem setup)")
-        except commands.errors.ExtensionAlreadyLoaded:
-            print(f"⚠️ Aviso: {filename} já estava carregado.")
-            cogs_loaded.append(filename)  # Consideramos como carregado
-        except Exception as e:
-            # Imprime o erro detalhado para QUALQUER cog que falhar
-            print(f"❌ Erro ao carregar {filename}:")
-            traceback.print_exc()
-            cogs_failed.append(f"{filename} ({type(e).__name__})")
-            print(f"⚠️ Ignorando erro e continuando com os próximos cogs...")
-
-    # Resumo do carregamento
-    loaded_extensions = list(bot.extensions.keys())
-    print(f"\n=== RESUMO DO CARREGAMENTO DE COGS ===")
-    print(f"-> Total de cogs encontrados: {len(cog_files)}")
-    print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {	', 	'.join(cogs_loaded) if cogs_loaded else 	'Nenhum	'}")
-    print(f"-> Cogs que falharam ({len(cogs_failed)}): {	', 	'.join(cogs_failed) if cogs_failed else 	'Nenhum	'}")
-    print(f"-> Extensões ativas ({len(loaded_extensions)}): {	', 	'.join(loaded_extensions) if loaded_extensions else 	'Nenhuma	'}")
-    print("=== FIM DO RESUMO ===\n")
+# O carregamento de COGs foi movido para setup_hook
 
 # Executa o bot
 print("-> Iniciando execução do bot com o token...")
