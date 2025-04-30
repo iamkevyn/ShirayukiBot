@@ -97,7 +97,6 @@ class MusicBot(commands.Bot):
             node: wavelink.Node = wavelink.Node(
                 uri=lava_uri,
                 password=lava_pass,
-                spotify_client=spotify_client # Passa o cliente (ou None)
             )
             await wavelink.NodePool.connect(client=self, nodes=[node])
             print(f"✅ Conectado ao nó Lavalink em {lava_uri}")
