@@ -557,10 +557,17 @@ class Musica(commands.Cog):
                   busca: str = SlashOption(description="Nome da música, link do YouTube/Spotify ou playlist", required=True)):
         try:
             await interaction.response.defer(ephemeral=False) # Resposta inicial visível
-            print(f"[DEBUG Musica] Comando /tocar recebido: 	'{busca}	' por {interaction.user} em {interaction.guild.name}")
+            print(f"[DEBUG Musica] Comando /tocar recebido: \t'{busca}\t' por {interaction.user} em {interaction.guild.name}")
 
-            player = await self.ensure_voice(interaction)
-            if not player:
+            # --- Adicionar verificação de nó conectado ---
+            node = wavelink.NodePool.get_node()
+            if not node or not node.is_connected:
+                print("[DEBUG Musica] /tocar: Nenhum nó Lavalink conectado encontrado.")
+                await interaction.followup.send("❌ O bot não está conectado ao servidor de música no momento. Tente novamente mais tarde ou contate um administrador.", ephemeral=True)
+                return
+            # --- Fim da verificação ---
+
+            player = await self.ensure_voice(interaction)           if not player:
                 print("[DEBUG Musica] /tocar: ensure_voice falhou.")
                 return # ensure_voice já enviou a mensagem de erro
 
