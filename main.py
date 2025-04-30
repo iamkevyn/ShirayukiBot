@@ -176,15 +176,7 @@ async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
     node = payload.node
     session_id = payload.session_id
     print(f"✅ Nó Lavalink '{node.identifier}' (Sessão: {session_id}) está pronto e conectado!")
-
-@bot.event
-async def on_wavelink_node_disconnected(payload: wavelink.NodeDisconnectedEventPayload):
-    node = payload.node
-    reason = payload.reason
-    code = payload.code
-    print(f"⚠️ Nó Lavalink '{node.identifier}' desconectado! Razão: {reason} (Código: {code})")
-    # Wavelink tentará reconectar por padrão.
-
+# REMOVIDO: Evento on_wavelink_node_disconnected (causando AttributeError)
 # O carregamento de COGs foi movido para setup_hook
 
 # Executa o bot
