@@ -64,13 +64,25 @@ class MusicBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Hook executado após o login, ideal para conexões assíncronas."""
-        print("-> Executando setup_hook...")
-        if lava_uri and lava_pass:
-            await self.connect_nodes()
-        else:
-            print("-> Conexão com Lavalink pulada em setup_hook (credenciais ausentes).")
-        # Carregar COGs aqui também é uma boa prática
-        await self.load_cogs()
+        print("--- [DIAGNÓSTICO] Entrando em setup_hook ---") # ADDED
+        try: # ADDED try/except block
+            print("--- [DIAGNÓSTICO] Dentro do try do setup_hook ---") # ADDED
+            print("-> Executando setup_hook...") # Keep original print
+            if lava_uri and lava_pass:
+                print("--- [DIAGNÓSTICO] Tentando chamar connect_nodes... ---") # ADDED
+                await self.connect_nodes()
+                print("--- [DIAGNÓSTICO] connect_nodes chamado (ou pulado se erro). ---") # ADDED
+            else:
+                print("-> Conexão com Lavalink pulada em setup_hook (credenciais ausentes).") # Keep original print
+
+            print("--- [DIAGNÓSTICO] Tentando chamar load_cogs... ---") # ADDED
+            await self.load_cogs()
+            print("--- [DIAGNÓSTICO] load_cogs chamado (ou pulado se erro). ---") # ADDED
+
+        except Exception as e: # ADDED except block
+            print(f"❌ [DIAGNÓSTICO] Erro DENTRO do setup_hook:") # ADDED
+            traceback.print_exc() # ADDED
+        print("--- [DIAGNÓSTICO] Saindo de setup_hook ---") # ADDED
 
     async def connect_nodes(self):
         """Conecta aos nós Lavalink."""
