@@ -163,6 +163,10 @@ async def on_ready():
             print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
         else:
             print("⚠️ A sincronização retornou None. Verifique se há comandos para sincronizar.")
+    # Adicionar tratamento específico para NotFound (Unknown application command)
+    except nextcord.errors.NotFound as e:
+        print(f"⚠️ Erro 404 durante sincronização (Comando desconhecido ignorado): {e}")
+        print("⚠️ O bot continuará funcionando, mas pode haver comandos antigos não removidos.")
     except Exception as e:
         print(f"❌ Erro ao sincronizar comandos slash:")
         traceback.print_exc()
