@@ -67,7 +67,7 @@ def load_json_data(file_path, default_data):
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        print(f"[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [ERRO] Falha ao carregar {os.path.basename(file_path)}, usando dados padrão.")
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [ERRO] Falha ao carregar {os.path.basename(file_path)}, usando dados padrão.')
         return default_data
 
 def connect_db(db_path):
