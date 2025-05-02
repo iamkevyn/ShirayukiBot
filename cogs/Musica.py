@@ -560,7 +560,7 @@ class Musica(commands.Cog):
             print(f"[DEBUG Musica] Comando /tocar recebido: \t'{busca}\t' por {interaction.user} em {interaction.guild.name}")
 
             # --- Adicionar verificação de nó conectado ---
-            node = wavelink.NodePool.get_node()
+            node = wavelink.Pool.get_node() # Use Pool instead of NodePool
             if not node or not node.is_connected:
                 print("[DEBUG Musica] /tocar: Nenhum nó Lavalink conectado encontrado.")
                 await interaction.followup.send("❌ O bot não está conectado ao servidor de música no momento. Tente novamente mais tarde ou contate um administrador.", ephemeral=True)
