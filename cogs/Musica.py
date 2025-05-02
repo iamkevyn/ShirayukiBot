@@ -580,7 +580,7 @@ class Musica(commands.Cog):
                 search_type = "URL"
                 print(f"[DEBUG Musica] /tocar: Buscando por URL: {busca}")
                 # Usar fetch_tracks para URLs, pode retornar Playlist ou lista de Track
-                tracks = await wavelink.NodePool.fetch_tracks(busca)
+                tracks = await wavelink.Pool.fetch_tracks(busca)
             else:
                 # Tenta busca no YouTube Music por padrão
                 search_type = "Texto (YTM)"
