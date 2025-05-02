@@ -1,157 +1,125 @@
-# /home/ubuntu/jsbot/main.py (MODIFICADO COM setup_hook)
-import os
 import nextcord
+import os
+import asyncio
+import traceback
+import wavelink
 from nextcord.ext import commands
 from dotenv import load_dotenv
-import traceback # Importar o módulo traceback
-import sys # Para sys.exit em caso de erro crítico
-import asyncio # Para wavelink
-import wavelink # Para Lavalink
 
-print("--- Iniciando Bot  ---")
+print("--- Iniciando Bot (Modo Tolerante a Falhas v2) ---")
 
-# Tentar importar a extensão Spotify, mas não falhar se não encontrar
+# Verifica se wavelink.ext.spotify está disponível
 try:
+    # Tenta importar algo específico do módulo
     from wavelink.ext import spotify
-    spotify_ext_available = True
-    print("-> Extensão wavelink.ext.spotify importada com sucesso.")
-except ModuleNotFoundError:
+    # Se chegou aqui, o módulo existe, mas não vamos usá-lo diretamente
+    print("⚠️ AVISO: Módulo 'wavelink.ext.spotify' encontrado, mas a integração direta está desativada. Use LavaSrc no Lavalink.")
+    # Definir spotify_client como None para evitar erros posteriores se o código antigo ainda o referenciar
+    spotify_client = None
+except ImportError:
+    # Se falhar, o módulo não está instalado ou disponível
     print("⚠️ AVISO: Módulo 'wavelink.ext' não encontrado. A integração com Spotify estará desativada.")
-    spotify = None # Definir como None para verificações posteriores
-    spotify_ext_available = False
+    spotify_client = None # Garante que a variável exista como None
 except Exception as e:
-    print("❌ Erro inesperado ao importar wavelink.ext.spotify:")
-    traceback.print_exc()
-    spotify = None
-    spotify_ext_available = False
+    print(f"❌ Erro inesperado ao verificar 'wavelink.ext.spotify': {e}")
+    spotify_client = None
 
-# Carregar variáveis de ambiente do .env
 print("-> Carregando variáveis de ambiente...")
+# Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 token = os.getenv("DISCORD_TOKEN")
-lava_uri = os.getenv("LAVALINK_URI")
-lava_pass = os.getenv("LAVALINK_PASSWORD")
-spotify_client_id = os.getenv("SPOTIFY_CLIENT_ID")
-spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+uri = os.getenv("LAVALINK_URI")
+password = os.getenv("LAVALINK_PASSWORD")
 
 if not token:
-    print("❌ CRÍTICO: Token do bot não encontrado! Verifique seu arquivo .env ou as variáveis de ambiente no Railway.")
-    sys.exit(1) # Parar execução se o token não for encontrado
-
-if not lava_uri or not lava_pass:
-    print("⚠️ AVISO: Credenciais do Lavalink (LAVALINK_URI, LAVALINK_PASSWORD) não encontradas. A funcionalidade de música não funcionará.")
-if not spotify_client_id or not spotify_client_secret:
-    print("⚠️ AVISO: Credenciais do Spotify (SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET) não encontradas. A busca por links do Spotify pode não funcionar corretamente.")
+    print("❌ CRÍTICO: Token do Discord não encontrado nas variáveis de ambiente.")
+    exit()
+if not uri:
+    print("⚠️ AVISO: URI do Lavalink não encontrada. Funcionalidades de música podem não funcionar.")
+if not password:
+    print("⚠️ AVISO: Senha do Lavalink não encontrada. Funcionalidades de música podem não funcionar.")
 
 print("-> Variáveis de ambiente carregadas.")
 
-# Intents recomendadas
 print("-> Configurando Intents...")
+# Define as intents necessárias para o bot
 intents = nextcord.Intents.default()
-intents.message_content = True
-intents.guilds = True
-intents.members = True
-intents.voice_states = True
+intents.message_content = True # Necessário para ler o conteúdo das mensagens (se aplicável)
+intents.voice_states = True    # Necessário para gerenciar estados de voz
+intents.guilds = True          # Necessário para informações da guilda
 print("-> Intents configuradas.")
 
-# Inicializa o bot
 print("-> Inicializando o Bot...")
-
+# Define a classe principal do bot, herdando de commands.Bot
 class MusicBot(commands.Bot):
     def __init__(self, *args, **kwargs):
+        print("--- [DIAGNÓSTICO] Iniciando __init__ da classe MusicBot ---")
         super().__init__(*args, **kwargs)
-        # A conexão com Lavalink agora é feita no setup_hook
+        self.loop.create_task(self.setup_hook()) # Chama setup_hook na inicialização
+        print("--- [DIAGNÓSTICO] __init__ da classe MusicBot concluído ---")
 
     async def setup_hook(self) -> None:
-        """Hook executado após o login, ideal para conexões assíncronas."""
-        print("--- [DIAGNÓSTICO] Entrando em setup_hook ---") # ADDED
-        try: # ADDED try/except block
-            print("--- [DIAGNÓSTICO] Dentro do try do setup_hook ---") # ADDED
-            print("-> Executando setup_hook...") # Keep original print
-            if lava_uri and lava_pass:
-                print("--- [DIAGNÓSTICO] Tentando chamar connect_nodes... ---") # ADDED
-                await self.connect_nodes()
-                print("--- [DIAGNÓSTICO] connect_nodes chamado (ou pulado se erro). ---") # ADDED
-            else:
-                print("-> Conexão com Lavalink pulada em setup_hook (credenciais ausentes).") # Keep original print
-
-            print("--- [DIAGNÓSTICO] Tentando chamar load_cogs... ---") # ADDED
-            await self.load_cogs()
-            print("--- [DIAGNÓSTICO] load_cogs chamado (ou pulado se erro). ---") # ADDED
-
-        except Exception as e: # ADDED except block
-            print(f"❌ [DIAGNÓSTICO] Erro DENTRO do setup_hook:") # ADDED
-            traceback.print_exc() # ADDED
-        print("--- [DIAGNÓSTICO] Saindo de setup_hook ---") # ADDED
-
-    async def connect_nodes(self):
-        """Conecta aos nós Lavalink."""
-        # await self.wait_until_ready() # Não é mais necessário aqui, setup_hook roda após login
-        if not lava_uri or not lava_pass:
-            print("❌ Erro: Credenciais do Lavalink não configuradas. Não é possível conectar ao nó.")
-            return
-
-        print("-> Tentando conectar ao nó Lavalink em connect_nodes...")
-        # REMOVIDO: Configuração manual do SpotifyClient. Assumindo Lavalink com LavaSrc.
-
+        """Inicializa o nó Lavalink e carrega os cogs."""
+        print("--- [DIAGNÓSTICO] Iniciando setup_hook ---")
         try:
-            node: wavelink.Node = wavelink.Node(
-                uri=lava_uri,
-                password=lava_pass,
-                # Se você estiver usando LavaSrc ou similar que suporte Spotify diretamente no Lavalink,
-                # você NÃO precisa passar spotify_client aqui.
-                # Se você REALMENTE precisar do wavelink.ext.spotify (menos comum agora),
-                # o parâmetro seria passado para NodePool.connect, não Node().
-                # Vamos manter simples por enquanto.
-            )
-            # Passar o spotify_client para o Pool.connect se aplicável (verificar documentação do Wavelink v3+)
-            # Para LavaSrc, geralmente não é necessário passar nada aqui.
-            await wavelink.NodePool.connect(client=self, nodes=[node])
-            print(f"✅ Conexão com o nó Lavalink iniciada via NodePool.connect.")
+            if uri and password:
+                print("--- [DIAGNÓSTICO] Tentando conectar nós Lavalink ---")
+                node: wavelink.Node = wavelink.Node(uri=uri, password=password)
+                # Não passamos mais spotify_client aqui
+                await wavelink.Pool.connect(nodes=[node], client=self)
+                print("--- [DIAGNÓSTICO] Conexão com Lavalink iniciada (aguardando on_wavelink_node_ready) ---")
+            else:
+                print("--- [DIAGNÓSTICO] URI ou senha do Lavalink ausentes. Pulando conexão com Lavalink. ---")
+
+            print("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook ---")
+            await self.load_cogs()
+            print("--- [DIAGNÓSTICO] Carregamento de cogs concluído em setup_hook ---")
+
         except Exception as e:
-            print(f"❌ Erro ao iniciar conexão com o nó Lavalink:")
+            print(f"❌ CRÍTICO: Erro durante o setup_hook:")
             traceback.print_exc()
-            print("⚠️ O bot continuará funcionando, mas sem recursos de música.")
+            print("⚠️ O bot pode não funcionar corretamente devido ao erro no setup_hook.")
+        print("--- [DIAGNÓSTICO] setup_hook concluído (ou falhou) ---")
 
     async def load_cogs(self):
-        """Carrega os COGs da pasta 'cogs'."""
-        print("\n--- Carregando COGs (via setup_hook) ---")
-        cogs_dir = "./cogs"
-        if not os.path.isdir(cogs_dir):
-            print(f"❌ Erro: Diretório de COGs '{cogs_dir}' não encontrado.")
-            return
-
-        try:
-            all_files = os.listdir(cogs_dir)
-            print(f"-> Arquivos encontrados em '{cogs_dir}': {all_files}")
-            cog_files = [f for f in all_files if f.endswith(".py") and not f.startswith("__")]
-            print(f"-> Arquivos .py a serem carregados: {cog_files}")
-        except Exception as e:
-            print(f"❌ Erro ao listar arquivos em '{cogs_dir}':")
-            traceback.print_exc()
-            cog_files = []
-
+        print("--- Carregando COGs (via setup_hook) ---")
+        cogs_dir = "cogs"
         cogs_loaded = []
         cogs_failed = []
+        cog_files = []
 
-        for filename in cog_files:
-            cog_path = f"cogs.{filename[:-3]}"
-            print(f"--> Tentando carregar: {cog_path}")
-            try:
-                self.load_extension(cog_path)
-                print(f"✅ COG carregado com sucesso: {filename}")
-                cogs_loaded.append(filename)
-            except commands.errors.NoEntryPointError:
-                print(f"⚠️ Aviso: {filename} não possui a função setup() e não pode ser carregado como cog.")
-                cogs_failed.append(f"{filename} (sem setup)")
-            except commands.errors.ExtensionAlreadyLoaded:
-                print(f"⚠️ Aviso: {filename} já estava carregado.")
-                cogs_loaded.append(filename)
-            except Exception as e:
-                print(f"❌ Erro ao carregar {filename}:")
-                traceback.print_exc()
-                cogs_failed.append(f"{filename} ({type(e).__name__})")
-                print(f"⚠️ Ignorando erro e continuando com os próximos cogs...")
+        if not os.path.isdir(cogs_dir):
+            print(f"⚠️ Diretório '{cogs_dir}' não encontrado. Nenhum cog será carregado.")
+            return
+
+        for filename in os.listdir(cogs_dir):
+            if filename.endswith(".py") and not filename.startswith("__"):
+                cog_path = f"{cogs_dir}.{filename[:-3]}"
+                cog_files.append(cog_path)
+                print(f"--> Tentando carregar: {cog_path}")
+                try:
+                    await self.load_extension(cog_path)
+                    # Verifica se a extensão realmente tem um comando setup
+                    # (Nota: load_extension já faz isso implicitamente, mas podemos ser explícitos)
+                    # ext = self.get_cog(cog_path.split('.')[-1]) # Pega o nome da classe
+                    # if ext is None or not hasattr(ext, 'setup'):
+                    #     print(f"⚠️ Aviso: {filename} carregado, mas não parece ter uma função 'setup'.")
+                    #     cogs_failed.append(f"{filename} (sem setup)")
+                    # else:
+                    print(f"✅ {filename} carregado com sucesso.")
+                    cogs_loaded.append(filename)
+
+                except commands.errors.NoEntryPointError:
+                    print(f"⚠️ Aviso: {filename} não possui uma função 'setup'. Pulando.")
+                    cogs_failed.append(f"{filename} (sem setup)")
+                except commands.errors.ExtensionAlreadyLoaded:
+                    print(f"⚠️ Aviso: {filename} já estava carregado.")
+                    cogs_loaded.append(filename)
+                except Exception as e:
+                    print(f"❌ Erro ao carregar {filename}:")
+                    traceback.print_exc()
+                    cogs_failed.append(f"{filename} ({type(e).__name__})")
+                    print(f"⚠️ Ignorando erro e continuando com os próximos cogs...")
 
         loaded_extensions = list(self.extensions.keys())
         print(f"\n=== RESUMO DO CARREGAMENTO DE COGS ===")
@@ -192,7 +160,9 @@ async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
     node = payload.node
     session_id = payload.session_id
     print(f"✅ Nó Lavalink '{node.identifier}' (Sessão: {session_id}) está pronto e conectado!")
+
 # REMOVIDO: Evento on_wavelink_node_disconnected (causando AttributeError)
+
 # O carregamento de COGs foi movido para setup_hook
 
 # Executa o bot
