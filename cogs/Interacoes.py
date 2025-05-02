@@ -6,7 +6,7 @@ import traceback
 import json
 import os
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import nextcord
 from nextcord import Interaction, Embed, Color, Member, SlashOption, User
