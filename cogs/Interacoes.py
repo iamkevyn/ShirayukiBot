@@ -100,6 +100,9 @@ INTERACTION_GIFS = {
 class Interacoes(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # Chama o método para gerar comandos quando o cog é inicializado
+        # Isso garante que os comandos sejam definidos antes da sincronização
+        self._generate_commands()
 
     def get_embed(self, action, user1, user2):
         gif = random.choice(INTERACTION_GIFS[action])
@@ -133,25 +136,45 @@ class Interacoes(commands.Cog):
             "feed": "deu comida para"
         }.get(action, action)
 
-    async def interaction_command(self, interaction: Interaction, user: nextcord.Member, action: str):
+    async def _interaction_command_template(self, interaction: Interaction, user: nextcord.Member, action: str):
+        """Template interno para os comandos de interação."""
         if user.id == interaction.user.id:
             await interaction.response.send_message(f"😅 {interaction.user.mention} tentou {self.verb(action)} a si mesmo... está tudo bem por aí?", ephemeral=True)
         else:
             embed = self.get_embed(action, interaction.user, user)
             await interaction.response.send_message(embed=embed)
 
-    def add_command(self, name, description):
-        async def command(interaction: Interaction, user: nextcord.Member):
-            await self.interaction_command(interaction, user, name)
-        command.__name__ = name
-        setattr(self, name, nextcord.slash_command(name=name, description=description)(command))
+    def _add_command(self, name, description):
+        """Adiciona dinamicamente um comando slash ao cog."""
+        # Cria a função de comando específica para esta ação
+        async def command_func(interaction: Interaction, user: nextcord.Member):
+            await self._interaction_command_template(interaction, user, name)
+        
+        # Define o nome da função (importante para o nextcord)
+        command_func.__name__ = f"cmd_{name}" 
+        
+        # Cria o comando slash usando o decorator e o associa à função criada
+        slash_command = nextcord.slash_command(name=name, description=description)(command_func)
+        
+        # Adiciona o comando slash criado ao cog
+        self.bot.add_application_command(slash_command)
+        print(f"--> Comando de interação '{name}' adicionado dinamicamente.")
 
-    def cog_load(self):
+    def _generate_commands(self):
+        """Gera todos os comandos de interação dinamicamente."""
+        print("--- Gerando comandos de interação dinamicamente ---")
         for name in INTERACTION_GIFS:
-            if not hasattr(self, name):
-                self.add_command(name, f"{self.verb(name).capitalize()} um usuário")
+            # Verifica se um comando com este nome já não foi adicionado (precaução)
+            # Nota: A verificação real se o comando já existe no bot é mais complexa,
+            # mas para este caso, assumimos que _generate_commands só roda uma vez.
+            self._add_command(name, f"{self.verb(name).capitalize()} um usuário")
+        print("--- Geração de comandos de interação concluída ---")
 
+# A função setup agora apenas adiciona o cog.
+# A geração dos comandos acontece no __init__ do cog.
 def setup(bot):
+    print("--- Configurando cog Interacoes ---")
     cog = Interacoes(bot)
     bot.add_cog(cog)
-    cog.cog_load()
+    print("--- Cog Interacoes adicionado ---")
+    # REMOVIDO: cog.cog_load() - Não chame métodos internos do cog aqui!
