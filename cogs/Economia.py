@@ -52,13 +52,11 @@ def ensure_dir_exists(file_path):
     directory = os.path.dirname(file_path)
     if not os.path.exists(directory):
         os.makedirs(directory)
-        print(f"[{datetime.now(timezone.utc).strftime(\'%Y-%m-%d %H:%M:%S\')}] [INFO] Diretório criado: {directory}")
-
-def load_json_data(file_path, default_data):
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Diretório criado: {directory}')def load_json_data(file_path, default_data):
     """Carrega dados de um arquivo JSON, criando-o com dados padrão se não existir."""
     ensure_dir_exists(file_path)
     if not os.path.exists(file_path):
-        print(f"[{datetime.now(timezone.utc).strftime(\"%Y-%m-%d %H:%M:%S\")}] [AVISO] Arquivo {os.path.basename(file_path)} não encontrado. Criando com dados padrão.")
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [AVISO] Arquivo {os.path.basename(file_path)} não encontrado. Criando com dados padrão.')
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(default_data, f, indent=4, ensure_ascii=False)
         return default_data
@@ -66,7 +64,7 @@ def load_json_data(file_path, default_data):
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        print(f"[{datetime.now(timezone.utc).strftime(\"%Y-%m-%d %H:%M:%S\")}] [ERRO] Falha ao carregar {os.path.basename(file_path)}, usando dados padrão.")
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [ERRO] Falha ao carregar {os.path.basename(file_path)}, usando dados padrão.')
         return default_data
 
 def save_json_data(file_path, data):
