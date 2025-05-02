@@ -98,7 +98,7 @@ class MusicBot(commands.Bot):
                 cog_files.append(cog_path)
                 print(f"--> Tentando carregar: {cog_path}")
                 try:
-                    await self.load_extension(cog_path)
+                    self.load_extension(cog_path)
                     # Verifica se a extensão realmente tem um comando setup
                     # (Nota: load_extension já faz isso implicitamente, mas podemos ser explícitos)
                     # ext = self.get_cog(cog_path.split('.')[-1]) # Pega o nome da classe
