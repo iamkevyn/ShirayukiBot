@@ -8,7 +8,7 @@ import sys # Para sys.exit em caso de erro crítico
 import asyncio # Para wavelink
 import wavelink # Para Lavalink
 
-print("--- Iniciando Bot (Modo Tolerante a Falhas v2) ---")
+print("--- Iniciando Bot  ---")
 
 # Tentar importar a extensão Spotify, mas não falhar se não encontrar
 try:
