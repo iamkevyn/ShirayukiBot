@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import nextcord
 from nextcord import Interaction, Embed, Color, Member, SlashOption, User
-from nextcord.ext import commands, application_checks
+from nextcord.ext import commands
 
 # Importar helper de emojis
 from utils.emojis import get_emoji
@@ -584,16 +584,16 @@ class Interacoes(commands.Cog):
             # Define o nome da função dinamicamente (importante para o nextcord)
             command_func.__name__ = f"cmd_{action_name}"
 
-            # Aplica cooldown
-            # Usando cooldown por usuário
-            cooled_down_func = application_checks.cooldown(1, COOLDOWN_SECONDS, bucket=nextcord.Buckets.user)(command_func)
+            # Cooldown removido por incompatibilidade
+            # cooled_down_func = application_checks.cooldown(1, COOLDOWN_SECONDS, bucket=commands.BucketType.user)(command_func)
+            cooled_down_func = command_func # Usar a função original sem cooldown
 
             # Cria o comando slash usando o decorator e o associa à função criada
             slash_command = nextcord.slash_command(
                 name=action_name,
                 description=description,
                 guild_ids=[SERVER_ID]
-            )(cooled_down_func)
+            )(cooled_down_func) # Registrar a função (sem cooldown)
 
             # Adiciona o comando slash criado ao bot
             try:
