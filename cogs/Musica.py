@@ -567,7 +567,8 @@ class Musica(commands.Cog):
                 return
             # --- Fim da verificação ---
 
-            player = await self.ensure_voice(interaction)           if not player:
+            player = await self.ensure_voice(interaction)
+            if not player:
                 print("[DEBUG Musica] /tocar: ensure_voice falhou.")
                 return # ensure_voice já enviou a mensagem de erro
 
