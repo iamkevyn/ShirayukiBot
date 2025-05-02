@@ -5,6 +5,7 @@ import traceback
 import wavelink
 from nextcord.ext import commands
 from dotenv import load_dotenv
+from keep_alive import keep_alive # <-- Adicionado import
 
 print("--- Iniciando Bot (Modo Tolerante a Falhas v2) ---")
 
@@ -164,6 +165,9 @@ async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
 # REMOVIDO: Evento on_wavelink_node_disconnected (causando AttributeError)
 
 # O carregamento de COGs foi movido para setup_hook
+
+# Inicia o servidor keep alive em background
+keep_alive() # <-- Adicionada chamada
 
 # Executa o bot
 print("-> Iniciando execução do bot com o token...")
