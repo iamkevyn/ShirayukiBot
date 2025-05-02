@@ -7,7 +7,7 @@ from nextcord.ext import commands
 from dotenv import load_dotenv
 from keep_alive import keep_alive # <-- Adicionado import
 
-print("--- Iniciando Bot (Modo Tolerante a Falhas v2) ---")
+print("--- Iniciando Bot ---")
 
 # Verifica se wavelink.ext.spotify está disponível
 try:
@@ -137,22 +137,23 @@ print("-> Bot instanciado.")
 async def on_ready():
     print(f"\n✅ {bot.user.name} está online e pronto!")
     # A sincronização de comandos pode ser movida para setup_hook também, mas on_ready ainda funciona.
-    print("-> Tentando sincronizar comandos slash em on_ready...")
-    try:
-        synced = await bot.sync_application_commands()
-        if synced is not None:
-            print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
-        else:
-            print("⚠️ A sincronização retornou None. Verifique se há comandos para sincronizar.")
-    # Adicionar tratamento específico para NotFound (Unknown application command)
-    except nextcord.errors.NotFound as e:
-        print(f"⚠️ Erro 404 durante sincronização (Comando desconhecido ignorado): {e}")
-        print("⚠️ O bot continuará funcionando, mas pode haver comandos antigos não removidos.")
-    except Exception as e:
-        print(f"❌ Erro ao sincronizar comandos slash:")
-        traceback.print_exc()
-        print("⚠️ O bot continuará funcionando, mas os comandos slash podem não estar disponíveis.")
-    print("-> Sincronização de comandos concluída (ou falhou).")
+    print("-> Sincronização de comandos slash TEMPORARIAMENTE DESATIVADA para teste.")
+    # print("-> Tentando sincronizar comandos slash em on_ready...")
+    # try:
+    #     synced = await bot.sync_application_commands()
+    #     if synced is not None:
+    #         print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
+    #     else:
+    #         print("⚠️ A sincronização retornou None. Verifique se há comandos para sincronizar.")
+    # # Adicionar tratamento específico para NotFound (Unknown application command)
+    # except nextcord.errors.NotFound as e:
+    #     print(f"⚠️ Erro 404 durante sincronização (Comando desconhecido ignorado): {e}")
+    #     print("⚠️ O bot continuará funcionando, mas pode haver comandos antigos não removidos.")
+    # except Exception as e:
+    #     print(f"❌ Erro ao sincronizar comandos slash:")
+    #     traceback.print_exc()
+    #     print("⚠️ O bot continuará funcionando, mas os comandos slash podem não estar disponíveis.")
+    # print("-> Sincronização de comandos concluída (ou falhou).")
 
 # Evento Wavelink para status do nó
 @bot.event
@@ -171,6 +172,7 @@ keep_alive() # <-- Adicionada chamada
 
 # Executa o bot
 print("-> Iniciando execução do bot com o token...")
+print("--- [DIAGNÓSTICO] Antes de bot.run() ---")
 try:
     bot.run(token)
 except nextcord.errors.LoginFailure:
@@ -179,4 +181,5 @@ except Exception as e:
     print("❌ Erro crítico durante a execução do bot:")
     traceback.print_exc()
 finally:
+    print("--- [DIAGNÓSTICO] Após bot.run() (no finally) ---")
     print("--- Bot encerrado ---")
