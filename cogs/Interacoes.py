@@ -439,7 +439,7 @@ class Interacoes(commands.Cog):
         self.interaction_gifs = INTERACTION_GIFS_LOCAL # Começa com o fallback local
         self.commands_generated = False
         self.bot.loop.create_task(self.load_gifs_from_source()) # Tenta carregar da fonte externa
-        print(f"[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Cog Interacoes inicializada.")
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] Cog Interacoes inicializada.')
 
     async def load_gifs_from_source(self):
         """Tenta carregar a lista de GIFs de uma fonte externa (ex: Gist)."""
