@@ -2,7 +2,7 @@
 # Cog principal para comandos gerais, moderação básica e o sistema de ajuda.
 
 import nextcord
-from nextcord import Interaction, Embed, SlashOption, Color, Member, User, Role, TextChannel, Permissions, AuditLogAction, Forbidden, HTTPException
+from nextcord import Interaction, Embed, SlashOption, Color, Member, User, Role, TextChannel, Permissions, AuditLogAction, Forbidden, HTTPException, ButtonStyle
 from nextcord.ext import commands, application_checks
 from nextcord.ui import View, Button, Select, Modal, TextInput
 import time
