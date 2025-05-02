@@ -183,7 +183,7 @@ class ConfirmModerationView(View):
             except (NotFound, AttributeError):
                 pass
 
-    @ui.button(label="Confirmar", style=ButtonStyle.danger) # Label será alterado no __init__
+    @nextcord.ui.button(label="Confirmar", style=ButtonStyle.danger) # Label será alterado no __init__
     async def confirm_button(self, button: Button, interaction: Interaction):
         self.confirmed = True
         for item in self.children:
