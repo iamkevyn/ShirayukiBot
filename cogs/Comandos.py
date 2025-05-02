@@ -326,13 +326,13 @@ class HelpView(View):
 
         # Mapeamento de Nomes Amigáveis e Emojis
         cog_display_info = {
-            "Comandos": {"emoji": get_emoji(self.bot, 'gear', default='⚙️'), "color": Color.blue()},
-            "Economia": {"emoji": get_emoji(self.bot, 'money', default='💰'), "color": Color.gold()},
-            "Informacoes": {"emoji": get_emoji(self.bot, 'info', default='ℹ️'), "color": Color.teal()},
-            "Interacoes": {"emoji": get_emoji(self.bot, 'happy_flower', default='🌸'), "color": Color.magenta()},
-            "Jogos": {"emoji": get_emoji(self.bot, 'dice', default='🎲'), "color": Color.green()},
-            "Utilitarios": {"emoji": get_emoji(self.bot, 'tool', default='🛠️'), "color": Color.orange()},
-            "Musica": {"emoji": get_emoji(self.bot, 'music', default='🎵'), "color": Color.red()}
+            "Comandos": {"emoji": get_emoji(self.bot, 'gear'), "color": Color.blue()},
+            "Economia": {"emoji": get_emoji(self.bot, 'money'), "color": Color.gold()},
+            "Informacoes": {"emoji": get_emoji(self.bot, 'info'), "color": Color.teal()},
+            "Interacoes": {"emoji": get_emoji(self.bot, 'happy_flower'), "color": Color.magenta()},
+            "Jogos": {"emoji": get_emoji(self.bot, 'dice'), "color": Color.green()},
+            "Utilitarios": {"emoji": get_emoji(self.bot, 'tool'), "color": Color.orange()},
+            "Musica": {"emoji": get_emoji(self.bot, 'music'), "color": Color.red()}
         }
         display_info = cog_display_info.get(cog_name, {"emoji": "❓", "color": Color.default()})
         friendly_name = cog_name.replace("Informacoes", "Informações").replace("Interacoes", "Interações")
