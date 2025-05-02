@@ -196,7 +196,7 @@ class InfoSelect(Select):
         except Exception as e:
             print(f"Erro no painel de info ({label}): {e}")
             traceback.print_exc() # Log completo do erro
-            await interaction.followup.send(f"{get_emoji(self.bot, 'sad')} Ocorreu um erro inesperado ao processar 
+            await interaction.followup.send(f"{get_emoji(self.bot, 'sad')} Ocorreu um erro inesperado ao processar sua solicitação.", ephemeral=True)
 
 # --- Cog Principal --- 
 class Informacoes(commands.Cog):
