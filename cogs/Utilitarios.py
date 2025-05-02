@@ -42,7 +42,7 @@ def ensure_dir_exists(file_path):
     directory = os.path.dirname(file_path)
     if not os.path.exists(directory):
         os.makedirs(directory)
-        print(f"[{datetime.datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [INFO] Diretório criado: {directory}")
+        print(f"[{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Diretório criado: {directory}")
 
 def load_json_data(file_path, default_data):
     """Carrega dados de um arquivo JSON, criando-o com dados padrão se não existir."""
