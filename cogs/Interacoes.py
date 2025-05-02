@@ -486,7 +486,7 @@ class Interacoes(commands.Cog):
         messages = []
         if user2: # Interação com alvo
             messages = [
-                f"{emoji_str} **{user1.display_name}** {verb} **{user2.display_name}**!
+                f"{emoji_str} **{user1.display_name}** {verb} **{user2.display_name}**!",
 
 
                 f"Olha só! **{user1.display_name}** {verb} **{user2.display_name}** {emoji_str}",
