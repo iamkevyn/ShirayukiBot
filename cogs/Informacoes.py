@@ -9,7 +9,7 @@ import random
 import nextcord
 from nextcord.ext import commands
 from nextcord import Interaction, Embed, Color, SlashOption, Member, Role, TextChannel, VoiceChannel, CategoryChannel, ForumChannel, StageChannel, User, Invite, Sticker, PartialEmoji
-from nextcord.ui import View, Select, Button, Paginator
+from nextcord.ui import View, Select, Button
 from nextcord.utils import format_dt # Importar format_dt para formatação de data/hora
 
 # Importar helper de emojis
