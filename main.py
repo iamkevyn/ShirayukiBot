@@ -65,7 +65,7 @@ class MusicBot(commands.Bot):
         cog_files = []
 
         if not os.path.isdir(cogs_dir):
-            print(f"⚠️ Diretório 	'{cogs_dir}	' não encontrado. Nenhum cog será carregado.")
+            print(f"⚠️ Diretório 		'{cogs_dir}		' não encontrado. Nenhum cog será carregado.")
             return
 
         for filename in os.listdir(cogs_dir):
@@ -99,9 +99,9 @@ class MusicBot(commands.Bot):
         loaded_extensions = list(self.extensions.keys())
         print(f"\n=== RESUMO DO CARREGAMENTO DE COGS (SEM MUSICA) ===")
         print(f"-> Total de cogs encontrados (ignorando Musica): {len(cog_files) - 1 if 'cogs.Musica' in cog_files else len(cog_files)}")
-        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {	', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
-        print(f"-> Cogs que falharam ({len(cogs_failed)}): {	', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
-        print(f"-> Extensões ativas ({len(loaded_extensions)}): {	', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
+        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {		', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
+        print(f"-> Cogs que falharam ({len(cogs_failed)}): {		', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
+        print(f"-> Extensões ativas ({len(loaded_extensions)}): {		', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
         print("=== FIM DO RESUMO ===\n")
 
 bot = MusicBot(command_prefix="!", intents=intents)
@@ -110,23 +110,22 @@ print("-> Bot instanciado.")
 @bot.event
 async def on_ready():
     print(f"\n✅ {bot.user.name} está online e pronto! (SEM MÚSICA/WAVELINK)")
-    # Mantida sincronização desativada para este teste
-    print("-> Sincronização de comandos slash TEMPORARIAMENTE DESATIVADA para teste.")
-    # print("-> Tentando sincronizar comandos slash em on_ready...")
-    # try:
-    #     synced = await bot.sync_application_commands()
-    #     if synced is not None:
-    #         print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
-    #     else:
-    #         print("⚠️ A sincronização retornou None. Verifique se há comandos para sincronizar.")
-    # except nextcord.errors.NotFound as e:
-    #     print(f"⚠️ Erro 404 durante sincronização (Comando desconhecido ignorado): {e}")
-    #     print("⚠️ O bot continuará funcionando, mas pode haver comandos antigos não removidos.")
-    # except Exception as e:
-    #     print(f"❌ Erro ao sincronizar comandos slash:")
-    #     traceback.print_exc()
-    #     print("⚠️ O bot continuará funcionando, mas os comandos slash podem não estar disponíveis.")
-    # print("-> Sincronização de comandos concluída (ou falhou).")
+    # Reativando sincronização de comandos slash
+    print("-> Tentando sincronizar comandos slash em on_ready...")
+    try:
+        synced = await bot.sync_application_commands()
+        if synced is not None:
+            print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
+        else:
+            print("⚠️ A sincronização retornou None. Verifique se há comandos para sincronizar.")
+    except nextcord.errors.NotFound as e:
+        print(f"⚠️ Erro 404 durante sincronização (Comando desconhecido ignorado): {e}")
+        print("⚠️ O bot continuará funcionando, mas pode haver comandos antigos não removidos.")
+    except Exception as e:
+        print(f"❌ Erro ao sincronizar comandos slash:")
+        traceback.print_exc()
+        print("⚠️ O bot continuará funcionando, mas os comandos slash podem não estar disponíveis.")
+    print("-> Sincronização de comandos concluída (ou falhou).")
 
 # Removido evento on_wavelink_node_ready
 
