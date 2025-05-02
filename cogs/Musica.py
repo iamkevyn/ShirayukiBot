@@ -561,7 +561,7 @@ class Musica(commands.Cog):
 
             # --- Adicionar verificação de nó conectado ---
             node = wavelink.Pool.get_node() # Use Pool instead of NodePool
-            if not node or not node.is_connected:
+            if not node or node.status != wavelink.NodeStatus.CONNECTED:
                 print("[DEBUG Musica] /tocar: Nenhum nó Lavalink conectado encontrado.")
                 await interaction.followup.send("❌ O bot não está conectado ao servidor de música no momento. Tente novamente mais tarde ou contate um administrador.", ephemeral=True)
                 return
