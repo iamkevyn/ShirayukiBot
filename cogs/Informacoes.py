@@ -191,7 +191,7 @@ class InfoSelect(Select):
                 await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             else:
                 # Fallback caso uma opção não gere um embed (não deveria acontecer)
-                await interaction.followup.send(f"{get_emoji(self.bot, 'thinking')} Opção 
+                await interaction.followup.send(f"{get_emoji(self.bot, 'thinking')} Opção '{label}' selecionada, mas não gerou um embed.", ephemeral=True)
 
         except Exception as e:
             print(f"Erro no painel de info ({label}): {e}")
