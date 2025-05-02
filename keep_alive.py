@@ -1,6 +1,6 @@
 from flask import Flask
 from threading import Thread
-import os # Import os module
+import os
 
 app = Flask("")
 
@@ -15,5 +15,7 @@ def run():
   app.run(host="0.0.0.0", port=port)
 
 def keep_alive():
+    print("--- Iniciando servidor Keep Alive ---")
     t = Thread(target=run)
     t.start()
+    print("--- Servidor Keep Alive rodando em background ---")
