@@ -564,9 +564,7 @@ class Jogos(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.quiz_questions = load_json_data(QUIZ_QUESTIONS_FILE, DEFAULT_QUIZ_QUESTIONS)
-        self.hangman_words = load_json_data(HANGMAN_WORDS_FILE, DEFAULT_HANGMAN_WORDS)
-        print(f"[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Cog Jogos carregada.")
-        print(f"[Jogos] {len(self.quiz_questions)} perguntas de quiz carregadas.")
+        self.hangman_words = load_json_data(HANGMAN_WORDS_FILE, DEFAULT_HANGMAN        print(f"[{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}] Cog Jogos carregada.")     print(f"[Jogos] {len(self.quiz_questions)} perguntas de quiz carregadas.")
         print(f"[Jogos] {len(self.hangman_words)} palavras da forca carregadas.")
 
     # --- Comandos Slash --- 
