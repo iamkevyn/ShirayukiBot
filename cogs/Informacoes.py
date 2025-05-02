@@ -362,9 +362,7 @@ class Informacoes(commands.Cog):
     def create_roles_embed(self, user: Member) -> Embed:
         """Cria o embed dos cargos do usuário."""
         roles = sorted([role for role in user.roles if role.name != "@everyone"], key=lambda r: r.position, reverse=True)
-        roles_str = "\n".join([f"{role.mention} (`{role.id}`)
-
- for role in roles]) if roles else f"{get_emoji(self.bot, 'thinking')} Nenhum cargo."
+        roles_str = "\n".join([f"{role.mention} (`{role.id}`)" for role in roles]) if roles else f"{get_emoji(self.bot, 'thinking')} Nenhum cargo."
         if len(roles_str) > 4000: # Limite de descrição do Embed
             roles_str = roles_str[:3990] + "... (lista muito longa)"
         embed = Embed(title=f"{get_emoji(self.bot, 'determined')} Cargos de {user.display_name} ({len(roles)})", description=roles_str, color=user.color if user.color != Color.default() else Color.orange())
