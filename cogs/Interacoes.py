@@ -568,7 +568,7 @@ class Interacoes(commands.Cog):
 
             is_solo = details.get("solo", False)
             verb = details["verb"]
-            description = f"{verb.capitalize()}.
+            description = f"{verb.capitalize()}."
 
 
             if not is_solo:
