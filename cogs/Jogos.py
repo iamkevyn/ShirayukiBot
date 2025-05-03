@@ -575,7 +575,6 @@ class Jogos(commands.Cog):
     # --- Comandos Slash --- 
 
     @nextcord.slash_command(guild_ids=[SERVER_ID], name="quiz", description="Inicia um quiz de anime!")
-    @application_checks.cooldown(1, 15, bucket=nextcord.Buckets.user) # Cooldown de 15s por usuário
     async def quiz(self, interaction: Interaction, quantidade: int = SlashOption(name="perguntas", description="Número de perguntas (3-15)", min_value=3, max_value=15, default=5)):
         """Inicia um quiz interativo com perguntas sobre animes."""
         if not self.quiz_questions:
