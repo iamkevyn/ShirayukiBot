@@ -65,8 +65,10 @@ def load_json_data(file_path, default_data):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[{timestamp}] [ERRO] Falha ao carregar {os.path.basename(file_path)}, usando dados padrão.")        return default_data
+    except (json.JSONDecodeError, FileNotFoundError):
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] [ERRO] Falha ao carregar {os.path.basename(file_path)}, usando dados padrão.")
+        return default_data
 
 def save_json_data(file_path, data):
     """Salva dados em um arquivo JSON."""
