@@ -552,7 +552,8 @@ class TicTacToeView(View):
                     else: # loser
                         cur.execute("UPDATE ttt_stats SET losses = losses + 1, username = ? WHERE user_id = ?", (user.name, user_id))
         except sqlite3.Error as e:
-            print(f"[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [ERRO SQLite] Erro ao salvar estatísticas TTT: {e}")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{timestamp}] [ERRO SQLite] Erro ao salvar estatísticas TTT: {e}")
         finally:
             conn.close()
 
