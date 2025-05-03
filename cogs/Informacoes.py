@@ -878,28 +878,6 @@ class Informacoes(commands.Cog):
     async def uptime(self, interaction: Interaction):
         """Exibe o tempo de atividade do bot desde a última inicialização."""
         embed = self.create_uptime_embed()
-        await interaction.response.send_message(embed=embed)
-        
-    @nextcord.slash_command(
-        guild_ids=[SERVER_ID],
-        name="ping",
-        description="Verifica a latência do bot."
-    )
-    async def ping(self, interaction: Interaction):
-        """Mede a latência da API do Discord e o tempo de resposta do bot."""
-        start_time = time.monotonic()
-        await interaction.response.defer(ephemeral=True)
-        end_time = time.monotonic()
-        
-        api_latency = round(self.bot.latency * 1000)
-        response_latency = round((end_time - start_time) * 1000)
-        
-        emoji = get_emoji(self.bot, 'sparkle_happy') if api_latency < 150 else get_emoji(self.bot, 'thinking') if api_latency < 300 else get_emoji(self.bot, 'sad')
-        
-        embed = Embed(title=f"{emoji} Pong!", color=Color.random())
-        embed.add_field(name="Latência da API", value=f"{api_latency} ms", inline=True)
-        embed.add_field(name="Latência da Resposta", value=f"{response_latency} ms", inline=True)
-        await interaction.followup.send(embed=embed, ephemeral=True)
         
     @nextcord.slash_command(
         guild_ids=[SERVER_ID],
