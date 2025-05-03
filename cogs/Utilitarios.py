@@ -420,7 +420,7 @@ class Utilitarios(commands.Cog):
                     
                 except Exception as e:
                     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"[{timestamp}] [ERRO Lembrete] Erro geral ao processar lembrete criado em {reminder.get('created_at', '???')}: {e}")
+                    print(f"[{timestamp}] [ERRO Lembrete] Erro geral ao processar lembrete criado em {reminder.get('created_at', '???')}: {e}")
                     # Marca para remoção para evitar loop de erro
                     reminders_to_remove_indices.append(reminder["created_at"])
                     reminders_updated = True
