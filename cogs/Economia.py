@@ -2,7 +2,8 @@
 # Cog para o sistema de economia do bot.
 
 import nextcord
-from nextcord import Interaction, Embed, SlashOption, Color, Member, User, File, ButtonStylenextcord.ext import commands, tasks, application_checks
+from nextcord import Interaction, Embed, SlashOption, Color, Member, User, File, ButtonStyle
+from nextcord.ext import commands, tasks, application_checks
 from nextcord import ui
 import json
 import os
