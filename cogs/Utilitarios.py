@@ -314,7 +314,8 @@ class Utilitarios(commands.Cog):
         self.quotes = self.load_default_quotes()
         self.curiosidades = self.load_default_curiosidades()
         self.check_reminders.start() # Inicia a task de verificação de lembretes
-        print(f"[{datetime.datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Cog Utilitarios carregada.")
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] Cog Utilitarios carregada.")
         print(f"[Utilitarios] {len(self.reminders)} lembretes carregados.")
 
     def cog_unload(self):
