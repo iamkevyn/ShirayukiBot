@@ -65,9 +65,8 @@ def load_json_data(file_path, default_data):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [ERRO] Falha ao carregar {os.path.basename(file_path)}, usando dados padrão.')
-        return default_data
+    except (json.JSONDecodeError, FileNotFoundError            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{timestamp}] [ERRO] Falha ao carregar {os.path.basename(file_path)}, usando dados padrão.")        return default_data
 
 def save_json_data(file_path, data):
     """Salva dados em um arquivo JSON."""
@@ -296,7 +295,8 @@ class Economia(commands.Cog):
         self.currency_emoji = get_emoji(bot, "money", default="💰") # Tenta pegar emoji custom, senão usa padrão
         self.economy_manager = EconomyManager(ECONOMY_FILE)
         self.shop_manager = ShopManager(SHOP_FILE)
-        print(f"[{datetime.now(timezone.utc).strftime(\"%Y-%m-%d %H:%M:%S\")}] Cog Economia carregada.")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] Cog Economia carregada.")
         print(f"[Economia] Usando moeda: {CURRENCY_NAME} ({self.currency_emoji})")
 
     # --- Comandos Principais --- 
