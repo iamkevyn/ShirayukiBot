@@ -16,3 +16,4 @@ qrcode[pil]
 pytz
 Wikipedia-API
 googletrans==4.0.0-rc1
+pyfiglet
