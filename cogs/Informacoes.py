@@ -64,11 +64,9 @@ def get_member_status_counts(guild: nextcord.Guild) -> dict:
         if member.activity and isinstance(member.activity, nextcord.Streaming):
             status_counts["streaming"] += 1
             
-        # Verifica status mobile (pode coexistir com online, idle, dnd)
-        # Nota: A API pode não fornecer isso de forma consistente ou para todos os clientes.
-        # Vamos verificar se o status mobile está presente em alguma das presenças.
-        if any(p.is_on_mobile() for p in member.presences):
-             status_counts["mobile"] += 1
+        # Verifica status mobile (REMOVIDO - member.presences obsoleto/requer intent)
+        # if member.mobile_status != nextcord.Status.offline: # Alternativa se intent presences estiver ativa
+        #     status_counts["mobile"] += 1
              
     return status_counts
 
