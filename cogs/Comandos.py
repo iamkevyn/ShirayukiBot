@@ -467,9 +467,8 @@ class Comandos(commands.Cog):
         embed = Embed(title=f"{get_emoji(self.bot, 'ping_pong', default='🏓')} Pong!", description=f"Latência: `{latency * 1000:.2f}ms`", color=Color.blue())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @nextcord.slash_command(name="botinfo", description="Mostra informações sobre a Shirayuki.", guild_ids=[SERVER_ID])
-    async def botinfo(self, interaction: Interaction):
-        """Mostra informações sobre a Shirayuki."""
+    @nextcord.slash_command(name="botstatus", description="Mostra informações e status da Shirayuki.", guild_ids=[SERVER_ID])
+    async def botstatus(self, interaction: Interaction):     """Mostra informações sobre a Shirayuki."""
         process = psutil.Process(os.getpid())
         mem_usage = process.memory_info().rss / (1024 * 1024) # Em MB
         cpu_usage = psutil.cpu_percent(interval=0.1)
