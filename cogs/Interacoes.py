@@ -7,7 +7,7 @@ import json
 import os
 import asyncio
 from datetime import datetime, timedelta, timezone
-
+from nextcord.ext import application_checks
 import nextcord
 from nextcord import Interaction, Embed, Color, Member, SlashOption, User
 from nextcord.ext import commands
