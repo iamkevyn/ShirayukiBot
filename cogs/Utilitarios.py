@@ -710,8 +710,7 @@ class Utilitarios(commands.Cog):
     async def traduzir(self, interaction: Interaction, 
                        texto: str = SlashOption(description="O texto a ser traduzido"), 
                        idioma_destino: str = SlashOption(name="para", description="Idioma de destino (ex: en, pt, es, ja)", default="pt"),
-                       idioma_origem: str = SlashOption(name="de", description="Idioma de origem (opcional, detecta automaticamente)", required=False))
-        :
+                       idioma_origem: str = SlashOption(name="de", description="Idioma de origem (opcional, detecta automaticamente)", required=False)):
         """Traduz texto usando Google Translate."""
         await interaction.response.defer()
         try:
