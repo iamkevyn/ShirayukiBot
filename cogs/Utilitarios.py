@@ -204,7 +204,8 @@ class SugestaoModal(ui.Modal):
             # Se não encontrar, avisa o usuário (não envia no canal atual para evitar spam)
             await interaction.followup.send(f"{get_emoji(self.bot, 'warn')} Canal #{self.suggestions_channel_name} não encontrado neste servidor. A sugestão foi registrada, mas não pude enviá-la para o canal específico.", ephemeral=True)
             # Opcional: Logar a sugestão em outro lugar ou para o dono do bot via DM
-            print(f"[{datetime.datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [Sugestão] {interaction.user}: {self.titulo.value} - {self.descricao.value}")
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{timestamp}] [Sugestão] {interaction.user}: {self.titulo.value} - {self.descricao.value}")
 
 class EnqueteView(ui.View):
     def __init__(self, interaction: Interaction, pergunta: str, opcoes_lista: list, bot):
