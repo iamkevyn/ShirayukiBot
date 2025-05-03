@@ -294,7 +294,7 @@ class Economia(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.currency_emoji = get_emoji(bot, "money", default="💰") # Tenta pegar emoji custom, senão usa padrão
+        self.currency_emoji = get_emoji(bot, "money") # Tenta pegar emoji custom, usa fallback interno da função se não achar
         self.economy_manager = EconomyManager(ECONOMY_FILE)
         self.shop_manager = ShopManager(SHOP_FILE)
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
