@@ -383,7 +383,8 @@ class HelpView(View):
     async def _get_home_embed(self) -> Embed:
         """Cria o Embed inicial de ajuda (home)."""
         embed = Embed(
-            title=f"{get_emoji(self.bot, 'book', default='📖')} Central de Ajuda da Shirayuki",
+            emoji_book = get_emoji(self.bot, 'book') or '📖'
+            title=f"{emoji_book} Central de Ajuda da Shirayuki",
             description=f"Olá! Sou a Shirayuki {get_emoji(self.bot, 'happy_flower')}. Use os botões abaixo para navegar pelas categorias de comandos.",
             color=Color.purple()
         )
