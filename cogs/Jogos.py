@@ -643,7 +643,6 @@ class Jogos(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @nextcord.slash_command(guild_ids=[SERVER_ID], name="forca", description="Jogue forca com o bot!")
-    @application_checks.cooldown(1, 30, bucket=nextcord.Buckets.channel) # Cooldown de 30s por canal
     async def forca(self, interaction: Interaction):
         """Inicia um jogo interativo da forca."""
         if not self.hangman_words:
