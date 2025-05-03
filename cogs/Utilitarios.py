@@ -982,5 +982,5 @@ def setup(bot):
     """Adiciona a cog Utilitarios ao bot."""
     # Verifica dependências opcionais
     if not WEATHER_API_KEY:
-        print(f"[{datetime.datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [AVISO Utilitarios] Chave da API OpenWeatherMap não definida (OPENWEATHERMAP_API_KEY). Comando /clima desabilitado.")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AVISO Utilitarios] Chave da API OpenWeatherMap não definida (OPENWEATHERMAP_API_KEY). Comando /clima desabilitado.")
     bot.add_cog(Utilitarios(bot))
