@@ -635,7 +635,8 @@ class Jogos(commands.Cog):
                         rank_list.append(f"{rank_emoji}{user_display}: **{pontos} pontos**")
                     embed.description = "\n".join(rank_list)
         except sqlite3.Error as e:
-            print(f"[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [ERRO SQLite] Erro ao ler ranking do quiz: {e}")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{timestamp}] [ERRO SQLite] Erro ao ler ranking do quiz: {e}")
             embed.description = f"{get_emoji(self.bot, 'sad')} Erro ao carregar o ranking."
         finally:
             conn.close()
