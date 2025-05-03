@@ -78,7 +78,8 @@ def connect_db(db_path):
         conn.row_factory = sqlite3.Row # Retorna dicionários em vez de tuplas
         return conn
     except sqlite3.Error as e:
-        print(f"[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [ERRO SQLite] Erro ao conectar a {os.path.basename(db_path)}: {e}")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] [ERRO SQLite] Erro ao conectar a {os.path.basename(db_path)}: {e}")
         return None
 
 # --- Views e Componentes para Jogos ---
