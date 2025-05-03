@@ -217,7 +217,8 @@ class QuizView(View):
                 cur.execute("UPDATE ranking SET pontos = MAX(pontos, ?), username = ?, last_played = ? WHERE user_id = ?", 
                             (self.score, self.username, datetime.utcnow().isoformat(), self.user_id))
         except sqlite3.Error as e:
-            print(f"[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [ERRO SQLite] Erro ao salvar pontuação do quiz: {e}")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{timestamp}] [ERRO SQLite] Erro ao salvar pontuação do quiz: {e}")
         finally:
             conn.close()
 
