@@ -76,7 +76,8 @@ def save_json_data(file_path, data):
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
     except IOError as e:
-        print(f"[{datetime.now(timezone.utc).strftime(\"%Y-%m-%d %H:%M:%S\")}] [ERRO] Falha ao salvar {os.path.basename(file_path)}: {e}")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] [ERRO] Falha ao salvar {os.path.basename(file_path)}: {e}")
 
 # --- Gerenciamento de Dados de Economia --- 
 class EconomyManager:
