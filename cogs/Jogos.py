@@ -759,7 +759,7 @@ class Jogos(commands.Cog):
                     embed.add_field(name="🎮 Total Jogos", value=str(total_games), inline=True)
                     embed.add_field(name="📈 Taxa Vit. (%)", value=f"{win_rate:.1f}%", inline=True)
         except sqlite3.Error as e:
-            print(f"[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] [ERRO SQLite] Erro ao ler estatísticas TTT: {e}")
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERRO SQLite] Erro ao ler estatísticas TTT: {e}")
             embed.description = f"{get_emoji(self.bot, 'sad')} Erro ao carregar as estatísticas."
         finally:
             conn.close()
