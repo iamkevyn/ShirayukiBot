@@ -766,7 +766,6 @@ class Jogos(commands.Cog):
     # --- Outros Jogos Simples --- 
 
     @nextcord.slash_command(guild_ids=[SERVER_ID], name="adivinhe_numero", description="Tente adivinhar o número que estou pensando (1-100)!",)
-    @application_checks.cooldown(1, 10, bucket=nextcord.Buckets.user)
     async def adivinhe_numero(self, interaction: Interaction):
         """Inicia um mini-game interativo de adivinhar o número."""
         numero_secreto = random.randint(1, 100)
