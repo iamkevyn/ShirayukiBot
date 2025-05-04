@@ -856,7 +856,7 @@ class Economia(commands.Cog):
             await interaction.response.send_message("comando de desenvolvedor, você não tem acesso à eles", ephemeral=True)
             return
         
-        user_id_str = str(usuario.id))
+        user_id_str = str(usuario.id)
         async with self.economy_manager.lock:
             if user_id_str in self.economy_manager.data:
                 self.economy_manager.data[user_id_str] = {
@@ -915,7 +915,7 @@ class Economia(commands.Cog):
             await interaction.response.send_message("comando de desenvolvedor, você não tem acesso à eles", ephemeral=True)
             return
         
-        success = await self.shop_manager.remove_item(item_id))
+        success = await self.shop_manager.remove_item(item_id)
         if success:
             await interaction.response.send_message(f"{get_emoji(self.bot, 'happy_flower')} Item `{item_id}` removido da loja com sucesso!", ephemeral=True)
         else:
