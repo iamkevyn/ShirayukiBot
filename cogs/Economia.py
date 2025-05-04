@@ -795,6 +795,10 @@ class Economia(commands.Cog):
     async def eco_admin_set(self, interaction: Interaction, 
                             usuario: Member | User = SlashOption(description="O usuário a ter o saldo modificado"), 
                             quantia: int = SlashOption(description="A nova quantia exata", min_value=0)):
+        if interaction.user.id != 1278842453159444582:
+            await interaction.response.send_message("comando de desenvolvedor, você não tem acesso à eles", ephemeral=True)
+            return
+        
         user_id = usuario.id
         current_balance = await self.economy_manager.get_balance(user_id)
         amount_change = quantia - current_balance # Calcula a diferença para registrar stats corretamente
@@ -811,6 +815,10 @@ class Economia(commands.Cog):
     async def eco_admin_give(self, interaction: Interaction, 
                              usuario: Member | User = SlashOption(description="O usuário a receber saldo"), 
                              quantia: int = SlashOption(description="A quantia a ser adicionada", min_value=1)):
+        if interaction.user.id != 1278842453159444582:
+            await interaction.response.send_message("comando de desenvolvedor, você não tem acesso à eles", ephemeral=True)
+            return
+        
         user_id = usuario.id
         new_balance = await self.economy_manager.update_balance(user_id, quantia, reason="admin_give")
         await self.economy_manager.save_data()
@@ -825,6 +833,10 @@ class Economia(commands.Cog):
     async def eco_admin_take(self, interaction: Interaction, 
                              usuario: Member | User = SlashOption(description="O usuário a perder saldo"), 
                              quantia: int = SlashOption(description="A quantia a ser removida", min_value=1)):
+        if interaction.user.id != 1278842453159444582:
+            await interaction.response.send_message("comando de desenvolvedor, você não tem acesso à eles", ephemeral=True)
+            return
+        
         user_id = usuario.id
         current_balance = await self.economy_manager.get_balance(user_id)
         amount_to_remove = min(quantia, current_balance) # Não pode remover mais do que o usuário tem
@@ -840,7 +852,11 @@ class Economia(commands.Cog):
 
     @eco_admin.subcommand(name="reset", description="[Admin] Reseta a economia de um usuário (saldo e inventário!).")
     async def eco_admin_reset(self, interaction: Interaction, usuario: Member | User = SlashOption(description="O usuário a ter a economia resetada")):
-        user_id_str = str(usuario.id)
+        if interaction.user.id != 1278842453159444582:
+            await interaction.response.send_message("comando de desenvolvedor, você não tem acesso à eles", ephemeral=True)
+            return
+        
+        user_id_str = str(usuario.id))
         async with self.economy_manager.lock:
             if user_id_str in self.economy_manager.data:
                 self.economy_manager.data[user_id_str] = {
@@ -875,6 +891,10 @@ class Economia(commands.Cog):
                              cargo_id: str = SlashOption(name="id_cargo_associado", description="ID do cargo a ser dado na compra (opcional)", required=False),
                              usavel: bool = SlashOption(name="item_usavel", description="Se o item pode ser usado com /usar (opcional)", default=False)
                              ):
+        if interaction.user.id != 1278842453159444582:
+            await interaction.response.send_message("comando de desenvolvedor, você não tem acesso à eles", ephemeral=True)
+            return
+        
         role_id_int = None
         if cargo_id:
             try:
@@ -891,7 +911,11 @@ class Economia(commands.Cog):
 
     @loja_admin.subcommand(name="remove", description="[Admin] Remove um item da loja.")
     async def loja_admin_remove(self, interaction: Interaction, item_id: str = SlashOption(description="ID do item a ser removido")):
-        success = await self.shop_manager.remove_item(item_id)
+        if interaction.user.id != 1278842453159444582:
+            await interaction.response.send_message("comando de desenvolvedor, você não tem acesso à eles", ephemeral=True)
+            return
+        
+        success = await self.shop_manager.remove_item(item_id))
         if success:
             await interaction.response.send_message(f"{get_emoji(self.bot, 'happy_flower')} Item `{item_id}` removido da loja com sucesso!", ephemeral=True)
         else:
