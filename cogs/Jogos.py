@@ -711,7 +711,6 @@ class Jogos(commands.Cog):
 
     # --- Jogo da Velha --- 
     @nextcord.slash_command(guild_ids=[SERVER_ID], name="jogo_da_velha", description="Desafie alguém para uma partida de Jogo da Velha!")
-    @application_checks.cooldown(1, 60, bucket=nextcord.Buckets.channel) # Cooldown de 60s por canal
     async def jogo_da_velha(self, interaction: Interaction, oponente: Member = SlashOption(description="O usuário que você quer desafiar")):
         """Inicia uma partida de Jogo da Velha contra outro membro."""
         if oponente.bot:
