@@ -590,7 +590,7 @@ class Utilitarios(commands.Cog):
             print(f"[ERRO Tempo] Falha ao obter hora: {e}")
             await interaction.response.send_message(f"{get_emoji(self.bot, 'sad')} Erro ao obter a hora para {fuso}.", ephemeral=True)
 
-    @nextcord.slash_command(guild_ids=[SERVER_ID], name="avatar", description="Mostra o avatar de um usuário.")
+# @nextcord.slash_command(guild_ids=[SERVER_ID], name="avatar", description="Mostra o avatar de um usuário.") # Comando duplicado, movido para Informacoes.py
     async def avatar(self, interaction: Interaction, usuario: Member | User = SlashOption(description="O usuário para ver o avatar (padrão: você)", required=False)):
         """Exibe o avatar de um membro ou usuário."""
         target_user = usuario or interaction.user
