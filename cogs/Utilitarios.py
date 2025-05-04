@@ -601,7 +601,7 @@ class Utilitarios(commands.Cog):
         view.add_item(ui.Button(label="Download", url=target_user.display_avatar.url, style=ButtonStyle.link))
         await interaction.response.send_message(embed=embed, view=view)
 
-    @nextcord.slash_command(guild_ids=[SERVER_ID], name="serverinfo", description="Mostra informações sobre o servidor.")
+# @nextcord.slash_command(guild_ids=[SERVER_ID], name="serverinfo", description="Mostra informações sobre o servidor.") # Comando duplicado, movido para Informacoes.py
     async def serverinfo(self, interaction: Interaction):
         """Exibe informações detalhadas sobre o servidor atual."""
         if not interaction.guild:
