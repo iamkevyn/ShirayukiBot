@@ -11,7 +11,7 @@ import asyncio
 import os
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Importar helper de emojis
 from utils.emojis import get_emoji
