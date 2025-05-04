@@ -641,7 +641,7 @@ class Utilitarios(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @nextcord.slash_command(guild_ids=[SERVER_ID], name="userinfo", description="Mostra informações sobre um usuário.")
+# @nextcord.slash_command(guild_ids=[SERVER_ID], name="userinfo", description="Mostra informações sobre um usuário.") # Comando duplicado, movido para Informacoes.py
     async def userinfo(self, interaction: Interaction, usuario: Member | User = SlashOption(description="O usuário para ver as informações (padrão: você)", required=False)):
         """Exibe informações detalhadas sobre um membro ou usuário."""
         target_user = usuario or interaction.user
