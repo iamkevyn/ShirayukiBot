@@ -965,17 +965,18 @@ class Utilitarios(commands.Cog):
     @commands.Cog.listener()
     async def on_application_command_error(self, interaction: Interaction, error):
         # Trata especificamente erros de cooldown DENTRO desta cog
-        if isinstance(error, application_checks.ApplicationCommandOnCooldown) and interaction.application_command.cog_name == self.__cog_name__:
-            retry_after = round(error.retry_after)
-            await interaction.response.send_message(
-                f"{get_emoji(self.bot, 'sad')} Calma aí! {get_emoji(self.bot, 'peek')} Você precisa esperar **{format_seconds(retry_after)}** para usar o comando `/{interaction.application_command.name}` novamente.", 
-                ephemeral=True
-            )
-            try:
-                error.handled = True # Marca como tratado para não ir para handlers globais (se o atributo existir)
-            except AttributeError:
-                pass # Ignora se o atributo não existir em versões mais antigas
+        # if isinstance(error, application_checks.ApplicationCommandOnCooldown) and interaction.application_command.cog_name == self.__cog_name__:
+        #     retry_after = round(error.retry_after)
+        #     await interaction.response.send_message(
+        #         f"{get_emoji(self.bot, 'sad')} Calma aí! {get_emoji(self.bot, 'peek')} Você precisa esperar **{format_seconds(retry_after)}** para usar o comando `/{interaction.application_command.name}` novamente.", 
+        #         ephemeral=True
+        #     )
+        #     try:
+        #         error.handled = True # Marca como tratado para não ir para handlers globais (se o atributo existir)
+        #     except AttributeError:
+        #         pass # Ignora se o atributo não existir em versões mais antigas
         # Deixa outros erros passarem para handlers globais, se houver
+        pass
 
 # Função setup para carregar a cog
 def setup(bot):
