@@ -437,7 +437,6 @@ class Utilitarios(commands.Cog):
     # --- Comandos Slash --- 
 
     @nextcord.slash_command(guild_ids=[SERVER_ID], name="lembrete", description="Define um lembrete para você.")
-    @application_checks.cooldown(1, 5, bucket=nextcord.Buckets.user)
     async def lembrete(self, interaction: Interaction, 
                        tempo: str = SlashOption(description="Tempo até o lembrete (ex: 10s, 5m, 2h, 1d, 1d12h)"), 
                        mensagem: str = SlashOption(description="A mensagem do lembrete (máx 1000 chars)", max_length=1000)):
