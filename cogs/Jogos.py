@@ -325,26 +325,38 @@ class HangmanView(View):
         return stages[min(self.wrong_guesses, len(stages) - 1)]
 
     def update_view(self):
-        """Atualiza os botões do teclado."""
+        """Atualiza os botões do teclado, respeitando o limite de 5 por linha."""
         self.clear_items()
-        # Adiciona botões do alfabeto em linhas
-        alphabet_rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-        for row in alphabet_rows:
-            for letter in row:
-                is_guessed = letter in self.guessed_letters
-                style = ButtonStyle.secondary
-                if is_guessed:
-                    style = ButtonStyle.success if letter in self.word else ButtonStyle.danger
-                
-                button = Button(
-                    label=letter.upper(),
-                    style=style,
-                    custom_id=f"hangman_{letter}",
-                    disabled=is_guessed,
-                    row=alphabet_rows.index(row) # Organiza em linhas
-                )
-                button.callback = self.letter_button_callback
-                self.add_item(button)
+        all_letters = "abcdefghijklmnopqrstuvwxyz"
+        current_row = 0
+        items_in_row = 0
+        max_items_per_row = 5
+
+        for letter in all_letters:
+            if items_in_row >= max_items_per_row:
+                current_row += 1
+                items_in_row = 0
+            
+            # Verifica se já atingiu o máximo de 5 linhas (0 a 4)
+            if current_row >= 5:
+                print(f"[AVISO Forca] Não foi possível adicionar o botão '{letter}', limite de 5 linhas atingido.")
+                continue # Pula botões que excederiam 5 linhas
+
+            is_guessed = letter in self.guessed_letters
+            style = ButtonStyle.secondary
+            if is_guessed:
+                style = ButtonStyle.success if letter in self.word else ButtonStyle.danger
+            
+            button = Button(
+                label=letter.upper(),
+                style=style,
+                custom_id=f"hangman_{letter}",
+                disabled=is_guessed,
+                row=current_row
+            )
+            button.callback = self.letter_button_callback
+            self.add_item(button)
+            items_in_row += 1
 
     async def letter_button_callback(self, interaction: Interaction):
         """Processa o clique no botão de letra."""
