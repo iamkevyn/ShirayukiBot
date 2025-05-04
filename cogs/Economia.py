@@ -925,21 +925,22 @@ class Economia(commands.Cog):
     @commands.Cog.listener()
     async def on_application_command_error(self, interaction: Interaction, error):
         # Trata especificamente erros de cooldown DENTRO desta cog
-        if isinstance(error, application_checks.ApplicationCommandOnCooldown) and interaction.application_command.cog_name == self.__cog_name__:
-            # Cooldowns já são tratados dentro de cada comando com mensagem específica
-            # Apenas marca como tratado para evitar logs desnecessários
-            try:
-                error.handled = True 
-            except AttributeError:
-                pass 
-        elif isinstance(error, application_checks.CheckFailure) and interaction.application_command.cog_name == self.__cog_name__:
-             # Erros de permissão (como do @is_admin) já enviam mensagem
-             # Apenas marca como tratado
-             try:
-                error.handled = True 
-             except AttributeError:
-                pass
+        # if isinstance(error, application_checks.ApplicationCommandOnCooldown) and interaction.application_command.cog_name == self.__cog_name__:
+        #     # Cooldowns já são tratados dentro de cada comando com mensagem específica
+        #     # Apenas marca como tratado para evitar logs desnecessários
+        #     try:
+        #         error.handled = True 
+        #     except AttributeError:
+        #         pass 
+        # elif isinstance(error, application_checks.CheckFailure) and interaction.application_command.cog_name == self.__cog_name__:
+        #      # Erros de permissão (como do @is_admin) já enviam mensagem
+        #      # Apenas marca como tratado
+        #      try:
+        #         error.handled = True 
+        #      except AttributeError:
+        #         pass
         # Deixa outros erros passarem
+        pass
 
 # --- Views Auxiliares --- 
 class ConfirmTransferView(ui.View):
