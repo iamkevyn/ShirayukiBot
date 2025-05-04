@@ -12,6 +12,7 @@ from nextcord import Interaction, Embed, SlashOption, Color, File, Member, User,
 from nextcord.ext import commands, tasks, application_checks
 from nextcord import ui
 import datetime
+from datetime import timezone
 import pytz # Para fusos horários
 import qrcode # Para gerar QR codes
 from io import BytesIO
