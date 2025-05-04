@@ -790,7 +790,6 @@ class Jogos(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @nextcord.slash_command(guild_ids=[SERVER_ID], name="roleta_russa", description="Tente a sorte na roleta russa (1/6 chance)! Cuidado!",)
-    @application_checks.cooldown(1, 10, bucket=nextcord.Buckets.user)
     async def roleta_russa(self, interaction: Interaction):
         """Simula uma roleta russa com 1 bala em 6 câmaras."""
         await interaction.response.defer()
