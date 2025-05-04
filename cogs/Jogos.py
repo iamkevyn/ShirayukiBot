@@ -582,12 +582,14 @@ class Jogos(commands.Cog):
             return
             
         max_questions = len(self.quiz_questions)
+        notification_text = None # Store potential notification
         if quantidade > max_questions:
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'thinking')} Só tenho {max_questions} perguntas! Iniciando com {max_questions}.", ephemeral=True)
+            # Don't send a message here, just store the text and adjust quantity
+            notification_text = f"{get_emoji(self.bot, 'thinking')} Só tenho {max_questions} perguntas! Iniciando com {max_questions}."
             quantidade = max_questions
-            
+
         selected_quizzes = random.sample(self.quiz_questions, quantidade)
-        
+
         initial_embed = Embed(
             title=f"🧠 Quiz - Pergunta 1/{quantidade}",
             description=selected_quizzes[0]['pergunta'],
@@ -595,8 +597,13 @@ class Jogos(commands.Cog):
         )
         if selected_quizzes[0].get('imagem'):
             initial_embed.set_image(url=selected_quizzes[0]['imagem'])
-            
+
+        # If there was a notification, add it to the footer
+        if notification_text:
+            initial_embed.set_footer(text=notification_text)
+
         view = QuizView(interaction, selected_quizzes, QUIZ_DB_PATH, self.bot)
+        # Now, send the single main response
         await interaction.response.send_message(embed=initial_embed, view=view)
         view.message = await interaction.original_message() # Guarda a mensagem para edição futura
 
@@ -852,14 +859,18 @@ class Jogos(commands.Cog):
     @commands.Cog.listener()
     async def on_application_command_error(self, interaction: Interaction, error):
         # Trata especificamente erros de cooldown DENTRO desta cog
-        if isinstance(error, application_checks.ApplicationCommandOnCooldown) and interaction.application_command.cog_name == self.__cog_name__:
-            retry_after = round(error.retry_after)
-            await interaction.response.send_message(
-                f"{get_emoji(self.bot, 'sad')} Calma aí! {get_emoji(self.bot, 'peek')} Você precisa esperar **{retry_after} segundos** para usar o comando `/{interaction.application_command.name}` novamente.", 
-                ephemeral=True
-            )
-            error.handled = True # Marca como tratado para não ir para handlers globais
+        # if isinstance(error, application_checks.ApplicationCommandOnCooldown) and interaction.application_command.cog_name == self.__cog_name__:
+        #     retry_after = round(error.retry_after)
+        #     await interaction.response.send_message(
+        #         f"{get_emoji(self.bot, 'sad')} Calma aí! {get_emoji(self.bot, 'peek')} Você precisa esperar **{retry_after} segundos** para usar o comando `/{interaction.application_command.name}` novamente.", 
+        #         ephemeral=True
+        #     )
+        #     try: # Tentativa de marcar como tratado
+        #        error.handled = True 
+        #     except AttributeError:
+        #        pass
         # Deixa outros erros passarem para handlers globais, se houver
+        pass
 
 # --- Views e Modals Auxiliares --- 
 
