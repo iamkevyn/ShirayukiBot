@@ -701,17 +701,15 @@ class Interacoes(commands.Cog):
     # --- Tratamento de Erro de Cooldown --- 
     @commands.Cog.listener()
     async def on_application_command_error(self, interaction: Interaction, error):
-        if isinstance(error, application_checks.ApplicationCommandOnCooldown):
-            retry_after = round(error.retry_after)
-            await interaction.response.send_message(
-                f"{get_emoji(self.bot, 'sad')} Calma aí, apressadinho! {get_emoji(self.bot, 'peek')} Você precisa esperar **{retry_after} segundos** para usar este comando novamente.", 
-                ephemeral=True
-            )
-        else:
-            # Para outros erros, podemos apenas logar ou enviar uma mensagem genérica
-            # Evita que o erro de cooldown seja tratado por outros listeners
-            # print(f"Erro em comando de aplicação (Interacoes): {error}")
-            pass # Deixa outros error handlers (se houver) cuidarem
+        # if isinstance(error, application_checks.ApplicationCommandOnCooldown):
+        #     retry_after = round(error.retry_after)
+        #     await interaction.response.send_message(
+        #         f"{get_emoji(self.bot, 'sad')} Calma aí, apressadinho! {get_emoji(self.bot, 'peek')} Você precisa esperar **{retry_after} segundos** para usar este comando novamente.", 
+        #         ephemeral=True
+        #     )
+        # else:
+        #     pass # Placeholder
+        pass
 
 # Função setup para carregar a cog
 def setup(bot):
