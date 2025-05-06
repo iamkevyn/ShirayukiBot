@@ -2,7 +2,7 @@ import nextcord
 import os
 import asyncio
 import traceback
-# import wavelink # Removido Wavelink
+import wavelink # Re-adicionado Wavelink
 from nextcord.ext import commands
 from dotenv import load_dotenv
 from keep_alive import keep_alive # Mantido import
@@ -15,13 +15,14 @@ print("-> Carregando variáveis de ambiente...")
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 token = os.getenv("DISCORD_TOKEN")
-# Removidas variáveis Lavalink (uri, password)
+lavalink_uri = os.getenv("LAVALINK_URI", "http://localhost:2333") # Default to localhost if not set
+lavalink_password = os.getenv("LAVALINK_PASSWORD", "youshallnotpass") # Default password
 
 if not token:
     print("❌ CRÍTICO: Token do Discord não encontrado nas variáveis de ambiente.")
     exit()
 
-print("-> Variáveis de ambiente carregadas.")
+print("-> Variáveis de ambiente carregadas (incluindo Lavalink defaults se não definidos).")
 
 print("-> Configurando Intents...")
 # Define as intents necessárias para o bot
@@ -41,18 +42,20 @@ class MusicBot(commands.Bot):
         print("--- [DIAGNÓSTICO] __init__ da classe MusicBot concluído ---")
 
     async def setup_hook(self) -> None:
-        """Carrega os cogs (sem Wavelink)."""
-        print("--- [DIAGNÓSTICO] Iniciando setup_hook (SEM WAVELINK) ---")
+        """Carrega os cogs e tenta conectar ao Lavalink."""
+        print("--- [DIAGNÓSTICO] Iniciando setup_hook ---")
         try:
-            # Removida lógica de conexão Lavalink
-            print("--- [DIAGNÓSTICO] Pulando conexão Lavalink (teste) ---")
+            print(f"--- [DIAGNÓSTICO] Tentando conectar ao Lavalink em {lavalink_uri} ---")
+            node: wavelink.Node = wavelink.Node(uri=lavalink_uri, password=lavalink_password)
+            await wavelink.NodePool.connect(client=self, nodes=[node])
+            # O evento on_wavelink_node_ready confirmará a conexão
 
-            print("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook ---")
+            print("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook (SEM MUSICA) ---")
             await self.load_cogs()
             print("--- [DIAGNÓSTICO] Carregamento de cogs concluído em setup_hook ---")
 
         except Exception as e:
-            print(f"❌ CRÍTICO: Erro durante o setup_hook:")
+            print(f"❌ CRÍTICO: Erro durante o setup_hook (Lavalink ou Cogs):")
             traceback.print_exc()
             print("⚠️ O bot pode não funcionar corretamente devido ao erro no setup_hook.")
         print("--- [DIAGNÓSTICO] setup_hook concluído (ou falhou) ---")
