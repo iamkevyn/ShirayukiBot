@@ -2,7 +2,7 @@ import nextcord
 import os
 import asyncio
 import traceback
-import wavelink # Re-adicionado Wavelink
+import wavelinkcord as wavelink # Alterado para usar o fork Wavelinkcord
 from nextcord.ext import commands
 from dotenv import load_dotenv
 from keep_alive import keep_alive # Mantido import
