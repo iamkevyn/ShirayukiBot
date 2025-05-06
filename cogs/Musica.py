@@ -553,7 +553,7 @@ class Musica(commands.Cog):
 
     # --- Comandos Slash ---
 
-    @nextcord.slash_command(name="tocar", description="Toca uma música ou adiciona à fila.")
+    @nextcord.slash_command(name="tocar", description="Toca uma música ou adiciona à fila.", guild_ids=[1367345048458498219])
     async def tocar(self, interaction: Interaction,
                   busca: str = SlashOption(description="Nome da música, link do YouTube/Spotify ou playlist", required=True)):
         try:
@@ -658,7 +658,7 @@ class Musica(commands.Cog):
             except:
                  pass # Falha ao enviar followup
 
-    @nextcord.slash_command(name="pular", description="Pula a música atual.")
+    @nextcord.slash_command(name="pular", description="Pula a música atual.", guild_ids=[1367345048458498219])
     async def pular(self, interaction: Interaction):
         try:
             print(f"[DEBUG Musica] Comando /pular recebido por {interaction.user} em {interaction.guild.name}")
@@ -682,7 +682,7 @@ class Musica(commands.Cog):
             except:
                  pass
 
-    @nextcord.slash_command(name="parar", description="Para a reprodução e desconecta o bot.")
+    @nextcord.slash_command(name="parar", description="Para a reprodução e desconecta o bot.", guild_ids=[1367345048458498219])
     async def parar(self, interaction: Interaction):
         try:
             print(f"[DEBUG Musica] Comando /parar recebido por {interaction.user} em {interaction.guild.name}")
@@ -723,7 +723,7 @@ class Musica(commands.Cog):
             except:
                  pass
 
-    @nextcord.slash_command(name="fila", description="Mostra a fila de reprodução atual.")
+    @nextcord.slash_command(name="fila", description="Mostra a fila de reprodução atual.", guild_ids=[1367345048458498219])
     async def fila(self, interaction: Interaction):
         try:
             print(f"[DEBUG Musica] Comando /fila recebido por {interaction.user} em {interaction.guild.name}")
@@ -762,7 +762,7 @@ class Musica(commands.Cog):
             except:
                  pass
 
-    @nextcord.slash_command(name="pausar", description="Pausa a música atual.")
+    @nextcord.slash_command(name="pausar", description="Pausa a música atual.", guild_ids=[1367345048458498219])
     async def pausar(self, interaction: Interaction):
         try:
             print(f"[DEBUG Musica] Comando /pausar recebido por {interaction.user} em {interaction.guild.name}")
@@ -786,7 +786,7 @@ class Musica(commands.Cog):
             except:
                  pass
 
-    @nextcord.slash_command(name="continuar", description="Continua a música pausada.")
+    @nextcord.slash_command(name="continuar", description="Continua a música pausada.", guild_ids=[1367345048458498219])
     async def continuar(self, interaction: Interaction):
         try:
             print(f"[DEBUG Musica] Comando /continuar recebido por {interaction.user} em {interaction.guild.name}")
@@ -808,7 +808,7 @@ class Musica(commands.Cog):
             except:
                  pass
 
-    @nextcord.slash_command(name="volume", description="Ajusta o volume do bot (0 a 150).")
+    @nextcord.slash_command(name="volume", description="Ajusta o volume do bot (0 a 150).", guild_ids=[1367345048458498219])
     async def volume(self, interaction: Interaction,
                    nivel: int = SlashOption(description="Nível do volume (0-150)", required=True, min_value=0, max_value=150)):
         try:
@@ -829,7 +829,7 @@ class Musica(commands.Cog):
             except:
                  pass
 
-    @nextcord.slash_command(name="loop", description="Ativa/desativa a repetição (música atual, fila ou desligado).")
+    @nextcord.slash_command(name="loop", description="Ativa/desativa a repetição (música atual, fila ou desligado).", guild_ids=[1367345048458498219])
     async def loop_cmd(self, interaction: Interaction):
         try:
             print(f"[DEBUG Musica] Comando /loop recebido por {interaction.user} em {interaction.guild.name}")
@@ -860,7 +860,7 @@ class Musica(commands.Cog):
             except:
                  pass
 
-    @nextcord.slash_command(name="shuffle", description="Embaralha a fila de reprodução.")
+    @nextcord.slash_command(name="shuffle", description="Embaralha a fila de reprodução.", guild_ids=[1367345048458498219])
     async def shuffle_cmd(self, interaction: Interaction):
         try:
             print(f"[DEBUG Musica] Comando /shuffle recebido por {interaction.user} em {interaction.guild.name}")
