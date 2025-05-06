@@ -48,7 +48,7 @@ class MusicBot(commands.Bot):
             print(f"--- [DIAGNÓSTICO] Verificando Wavelink: Versão {wavelink.__version__}, Atributos: {dir(wavelink)}") # Adiciona verificação
             print(f"--- [DIAGNÓSTICO] Tentando conectar ao Lavalink em {lavalink_uri} ---")
             node: wavelink.Node = wavelink.Node(uri=lavalink_uri, password=lavalink_password)
-            await wavelink.NodePool.connect(client=self, nodes=[node])
+            await wavelink.Pool.connect(client=self, nodes=[node]) # Tenta usar Pool em vez de NodePool
             # O evento on_wavelink_node_ready confirmará a conexão
 
             print("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook (SEM MUSICA) ---")
