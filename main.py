@@ -132,9 +132,10 @@ async def on_ready():
     print("-> Sincronização de comandos concluída (ou falhou).")
 
 @bot.event
-async def on_wavelink_node_ready(node: wavelink.Node):
+async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
     """Evento chamado quando um nó Lavalink está pronto."""
-    print(f"✅ Nó Lavalink 		'{node.identifier}		' conectado e pronto!")
+    node = payload.node # Acessa o nó a partir do payload
+    print(f"✅ Nó Lavalink 		'{node.identifier}'		 conectado e pronto!")
 
 # Inicia o servidor keep alive em background
 keep_alive() # Mantida chamada
