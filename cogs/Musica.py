@@ -247,7 +247,7 @@ class Musica(commands.Cog):
         # self.autoleave.start() # Mantendo autoleave desativado conforme solicitado
 
     @commands.Cog.listener()
-    async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
+    async def on_wavelink_node_ready(self, payload):
         """Evento chamado quando um nó Lavalink está pronto."""
         try:
             print(f"✅ Nó Lavalink 	'{payload.node.identifier}	' (Sessão: {payload.session_id}) está pronto!")
@@ -259,7 +259,7 @@ class Musica(commands.Cog):
             traceback.print_exc()
 
     @commands.Cog.listener()
-    async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
+    async def on_wavelink_track_start(self, payload):
         """Evento chamado quando uma música começa a tocar."""
         try:
             player = payload.player
@@ -329,7 +329,7 @@ class Musica(commands.Cog):
             traceback.print_exc()
 
     @commands.Cog.listener()
-    async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
+    async def on_wavelink_track_end(self, payload):
         """Evento chamado quando uma música termina."""
         try:
             player = payload.player
@@ -343,7 +343,7 @@ class Musica(commands.Cog):
             traceback.print_exc()
 
     @commands.Cog.listener()
-    async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
+    async def on_wavelink_track_exception(self, payload):
         """Evento chamado quando ocorre um erro durante a reprodução."""
         try:
             player = payload.player
