@@ -2,79 +2,79 @@ import nextcord
 import os
 import asyncio
 import traceback
-import wavelink # Revertido para Wavelink oficial
+import mafic # <--- MUDANÇA: Wavelink para Mafic
 from nextcord.ext import commands
 from dotenv import load_dotenv
-from keep_alive import keep_alive # Mantido import
+from keep_alive import keep_alive
 
-print("--- Iniciando Bot ---")
-
-# Removida verificação de wavelink.ext.spotify
+print("--- Iniciando Bot (com Mafic) ---")
 
 print("-> Carregando variáveis de ambiente...")
-# Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 token = os.getenv("DISCORD_TOKEN")
-lavalink_uri = os.getenv("LAVALINK_URI", "http://localhost:2333") # Default to localhost if not set
-lavalink_password = os.getenv("LAVALINK_PASSWORD", "youshallnotpass") # Default password
-
-# ID do servidor da Shira será usado nos comandos da cog Musica.py
-# SHIRA_GUILD_ID = 1367345048458498219 # Movido para dentro da cog ou usado diretamente
+lavalink_host = os.getenv("LAVALINK_HOST", "lavalink.jirayu.net") # Usar LAVALINK_HOST
+lavalink_port = int(os.getenv("LAVALINK_PORT", "13592")) # Usar LAVALINK_PORT, converter para int
+lavalink_password = os.getenv("LAVALINK_PASSWORD", "youshallnotpass")
+lavalink_label = os.getenv("LAVALINK_LABEL", "LAVALINK_JIRAYU") # Label para o nó Mafic
 
 if not token:
     print("❌ CRÍTICO: Token do Discord não encontrado nas variáveis de ambiente.")
     exit()
 
-print("-> Variáveis de ambiente carregadas (incluindo Lavalink defaults se não definidos).")
+print("-> Variáveis de ambiente carregadas.")
 
 print("-> Configurando Intents...")
-# Define as intents necessárias para o bot
 intents = nextcord.Intents.default()
-intents.message_content = True # Necessário para ler o conteúdo das mensagens (se aplicável)
-intents.voice_states = True    # Necessário para gerenciar estados de voz
-intents.guilds = True          # Necessário para informações da guilda
+intents.message_content = True
+intents.voice_states = True
+intents.guilds = True
 print("-> Intents configuradas.")
 
-print("-> Inicializando o Bot...")
-# Define a classe principal do bot, herdando de commands.Bot
+print("-> Inicializando o Bot (com Mafic)...")
 class MusicBot(commands.Bot):
     def __init__(self, *args, **kwargs):
-        print("--- [DIAGNÓSTICO] Iniciando __init__ da classe MusicBot ---")
-        # Removemos o debug_guilds daqui, pois causava erro.
-        # O registro imediato será feito via guild_ids nos comandos da cog.
+        print("--- [DIAGNÓSTICO MAFIC] Iniciando __init__ da classe MusicBot ---")
         super().__init__(*args, **kwargs)
-        self.loop.create_task(self.setup_hook()) # Chama setup_hook na inicialização
-        print("--- [DIAGNÓSTICO] __init__ da classe MusicBot concluído ---")
+        # O NodePool do Mafic será inicializado no setup_hook
+        self.mafic_pool: mafic.NodePool | None = None
+        print("--- [DIAGNÓSTICO MAFIC] __init__ da classe MusicBot concluído ---")
 
     async def setup_hook(self) -> None:
-        """Carrega os cogs e tenta conectar ao Lavalink."""
-        print("--- [DIAGNÓSTICO] Iniciando setup_hook ---")
+        print("--- [DIAGNÓSTICO MAFIC] Iniciando setup_hook ---")
         try:
-            print(f"--- [DIAGNÓSTICO] Verificando Wavelink: Versão {wavelink.__version__}, Atributos: {dir(wavelink)}")
-            print(f"--- [DIAGNÓSTICO] Tentando conectar ao Lavalink em {lavalink_uri} ---")
-            node: wavelink.Node = wavelink.Node(uri=lavalink_uri, password=lavalink_password)
-            await wavelink.Pool.connect(client=self, nodes=[node]) # Revertido para Pool (Wavelink v3+)
-            # O evento on_wavelink_node_ready confirmará a conexão
+            print(f"--- [DIAGNÓSTICO MAFIC] Verificando Mafic: Versão {mafic.__version__}")
+            print(f"--- [DIAGNÓSTICO MAFIC] Inicializando Mafic NodePool ---")
+            self.mafic_pool = mafic.NodePool(self) # Inicializa o NodePool do Mafic
+            
+            print(f"--- [DIAGNÓSTICO MAFIC] Tentando conectar ao Lavalink (Mafic) em {lavalink_host}:{lavalink_port} ---")
+            await self.mafic_pool.create_node(
+                host=lavalink_host,
+                port=lavalink_port,
+                label=lavalink_label,
+                password=lavalink_password,
+                # secure=False # Adicionar se o Lavalink não usar SSL
+            )
+            # O evento on_mafic_node_ready na cog Musica confirmará a conexão
 
-            print("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook ---")
+            print("--- [DIAGNÓSTICO MAFIC] Iniciando carregamento de cogs em setup_hook ---")
             await self.load_cogs()
-            print("--- [DIAGNÓSTICO] Carregamento de cogs concluído em setup_hook ---")
+            print("--- [DIAGNÓSTICO MAFIC] Carregamento de cogs concluído em setup_hook ---")
 
         except Exception as e:
-            print(f"❌ CRÍTICO: Erro durante o setup_hook (Lavalink ou Cogs):")
+            print(f"❌ CRÍTICO: Erro durante o setup_hook (Mafic ou Cogs):")
             traceback.print_exc()
             print("⚠️ O bot pode não funcionar corretamente devido ao erro no setup_hook.")
-        print("--- [DIAGNÓSTICO] setup_hook concluído (ou falhou) ---")
+        print("--- [DIAGNÓSTICO MAFIC] setup_hook concluído (ou falhou) ---")
 
     async def load_cogs(self):
-        print("--- Carregando COGs (via setup_hook) ---")
+        print("--- Carregando COGs (via setup_hook com Mafic) ---")
         cogs_dir = "cogs"
         cogs_loaded = []
         cogs_failed = []
         cog_files = []
 
         if not os.path.isdir(cogs_dir):
-            print(f"⚠️ Diretório 		'{cogs_dir}'		 não encontrado. Nenhum cog será carregado.")
+            print(f"⚠️ Diretório '{cogs_dir}' não encontrado. Nenhum cog será carregado.")
             return
 
         for filename in os.listdir(cogs_dir):
@@ -101,25 +101,21 @@ class MusicBot(commands.Bot):
                     print(f"⚠️ Ignorando erro e continuando com os próximos cogs...")
 
         loaded_extensions = list(self.extensions.keys())
-        print(f"\n=== RESUMO DO CARREGAMENTO DE COGS ===")
+        print(f"\n=== RESUMO DO CARREGAMENTO DE COGS (MAFIC) ===")
         print(f"-> Total de cogs encontrados: {len(cog_files)}")
-        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {		', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
-        print(f"-> Cogs que falharam ({len(cogs_failed)}): {		', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
-        print(f"-> Extensões ativas ({len(loaded_extensions)}): {		', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
+        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
+        print(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
+        print(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
         print("=== FIM DO RESUMO ===\n")
 
-# Inicializa o bot sem debug_guilds. O registro imediato será feito na cog Musica.
 bot = MusicBot(command_prefix="!", intents=intents)
-print("-> Bot instanciado.")
+print("-> Bot (Mafic) instanciado.")
 
 @bot.event
 async def on_ready():
-    print(f"\n✅ {bot.user.name} está online e pronto!")
-    # A sincronização aqui tentará o registro global.
-    # Comandos com guild_ids na cog Musica serão registrados imediatamente lá.
+    print(f"\n✅ {bot.user.name} (Mafic) está online e pronto!")
     print("-> Tentando sincronizar comandos slash em on_ready (global + guild-specific)...")
     try:
-        # Não passamos guild_ids aqui para permitir o registro global em paralelo.
         synced = await bot.sync_application_commands()
         if synced is not None:
             print(f"🔄 Comandos slash sincronizados/enviados para registro: {len(synced)} comandos")
@@ -127,32 +123,25 @@ async def on_ready():
             print("⚠️ A sincronização retornou None. Verifique se há comandos para sincronizar.")
     except nextcord.errors.NotFound as e:
         print(f"⚠️ Erro 404 durante sincronização (Comando desconhecido ignorado): {e}")
-        print("⚠️ O bot continuará funcionando, mas pode haver comandos antigos não removidos.")
     except Exception as e:
         print(f"❌ Erro ao sincronizar comandos slash:")
         traceback.print_exc()
-        print("⚠️ O bot continuará funcionando, mas os comandos slash podem não estar disponíveis imediatamente em todos os servidores.")
     print("-> Sincronização de comandos concluída (ou falhou).")
 
-@bot.event
-async def on_wavelink_node_ready(payload):
-    """Evento chamado quando um nó Lavalink está pronto."""
-    node = payload.node # Acessa o nó a partir do payload
-    print(f"✅ Nó Lavalink 		'{node.identifier}'		 conectado e pronto!")
+# O evento on_mafic_node_ready é tratado na cog Musica.py
+# Não é mais necessário um listener on_wavelink_node_ready aqui.
 
-# Inicia o servidor keep alive em background
-keep_alive() # Mantida chamada
+keep_alive()
 
-# Executa o bot
-print("-> Iniciando execução do bot com o token...")
-print("--- [DIAGNÓSTICO] Antes de bot.run() ---")
+print("-> Iniciando execução do bot (Mafic) com o token...")
+print("--- [DIAGNÓSTICO MAFIC] Antes de bot.run() ---")
 try:
     bot.run(token)
 except nextcord.errors.LoginFailure:
     print("❌ CRÍTICO: Falha no login - Token inválido. Verifique seu token.")
 except Exception as e:
-    print("❌ Erro crítico durante a execução do bot:")
+    print("❌ Erro crítico durante a execução do bot (Mafic):")
     traceback.print_exc()
 finally:
-    print("--- [DIAGNÓSTICO] Após bot.run() (no finally) ---")
-    print("--- Bot encerrado ---")
+    print("--- [DIAGNÓSTICO MAFIC] Após bot.run() (no finally) ---")
+    print("--- Bot (Mafic) encerrado ---")
