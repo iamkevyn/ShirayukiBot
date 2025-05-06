@@ -7,7 +7,7 @@ import nextcord
 from nextcord import Interaction, Embed, ButtonStyle, SlashOption, Color, VoiceChannel
 from nextcord.ui import View, Button, button # Import button decorator
 from nextcord.ext import commands, tasks
-import wavelink
+import wavelinkcord as wavelink
 import traceback
 import re
 import math
