@@ -242,9 +242,9 @@ class QueuePaginatorView(View):
 class Musica(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.active_control_messages = {} # guild_id: message_id
+        self.active_control_messages = {} # guild_id: (channel_id, message_id)
         print("[DEBUG Musica] Cog Musica inicializado.")
-        # self.autoleave.start() # Autoleave pode ser complexo com Wavelink v3, desativado por ora
+        # self.autoleave.start() # Mantendo autoleave desativado conforme solicitado
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
@@ -294,15 +294,20 @@ class Musica(commands.Cog):
                 # Limpar mensagem de controle antiga se existir
                 guild_id = player.guild.id
                 if guild_id in self.active_control_messages:
+                    old_channel_id, old_message_id = self.active_control_messages[guild_id]
                     try:
-                        old_msg = await channel.fetch_message(self.active_control_messages[guild_id])
-                        await old_msg.delete()
-                        print(f"[DEBUG Musica] Mensagem de controle antiga deletada para guild {guild_id}")
+                        old_channel = self.bot.get_channel(old_channel_id)
+                        if old_channel:
+                            old_msg = await old_channel.fetch_message(old_message_id)
+                            await old_msg.delete()
+                            print(f"[DEBUG Musica] Mensagem de controle antiga ({old_message_id}) no canal {old_channel_id} deletada para guild {guild_id}")
+                        else:
+                            print(f"[DEBUG Musica] Canal antigo {old_channel_id} não encontrado para deletar msg {old_message_id} em on_track_start.")
                     except (nextcord.NotFound, nextcord.Forbidden) as e_del:
-                        print(f"[DEBUG Musica] Erro (ignorado) ao deletar msg antiga em on_track_start: {e_del}")
+                        print(f"[DEBUG Musica] Erro (ignorado) ao deletar msg antiga {old_message_id} em on_track_start: {e_del}")
                         pass # Ignora se não encontrar ou não tiver permissão
                     except Exception as e_del_unk:
-                         print(f"❌ Erro INESPERADO ao deletar msg antiga em on_track_start:")
+                         print(f"❌ Erro INESPERADO ao deletar msg antiga {old_message_id} em on_track_start:")
                          traceback.print_exc()
                     # Garante que a chave seja removida mesmo se a deleção falhar
                     if guild_id in self.active_control_messages:
@@ -311,8 +316,8 @@ class Musica(commands.Cog):
                 try:
                     view = MusicControlView(self)
                     message = await channel.send(embed=embed, view=view)
-                    self.active_control_messages[guild_id] = message.id
-                    print(f"[DEBUG Musica] Nova mensagem de controle enviada para guild {guild_id}: {message.id}")
+                    self.active_control_messages[guild_id] = (channel.id, message.id) # Store channel_id and message_id
+                    print(f"[DEBUG Musica] Nova mensagem de controle enviada para guild {guild_id}: ({channel.id}, {message.id})")
                 except Exception as e_send:
                     print(f"❌ Erro ao enviar mensagem 'Tocando agora' em on_wavelink_track_start:")
                     traceback.print_exc()
@@ -390,24 +395,20 @@ class Musica(commands.Cog):
                 print(f"[DEBUG Musica] on_voice_state_update: Bot desconectado do canal de voz em {member.guild.name}")
                 guild_id = member.guild.id
                 if guild_id in self.active_control_messages:
+                    old_channel_id, old_message_id = self.active_control_messages[guild_id]
                     try:
-                        # Tenta encontrar o canal da mensagem original
-                        # Idealmente, armazenar channel_id junto com message_id
-                        # Tentativa com o canal antigo do player (pode falhar)
-                        old_channel_id = player.channel.id if player.channel else None
-                        channel = member.guild.get_channel(old_channel_id) if old_channel_id else None
-
+                        channel = self.bot.get_channel(old_channel_id)
                         if channel and isinstance(channel, nextcord.TextChannel):
-                            old_msg = await channel.fetch_message(self.active_control_messages[guild_id])
+                            old_msg = await channel.fetch_message(old_message_id)
                             await old_msg.delete()
-                            print(f"[DEBUG Musica] Mensagem de controle deletada após desconexão para guild {guild_id}")
+                            print(f"[DEBUG Musica] Mensagem de controle ({old_message_id}) deletada após desconexão para guild {guild_id}")
                         else:
-                            print(f"[DEBUG Musica] Não foi possível encontrar o canal da mensagem de controle antiga para guild {guild_id}")
+                            print(f"[DEBUG Musica] Não foi possível encontrar o canal {old_channel_id} da mensagem de controle antiga para guild {guild_id}")
                     except (nextcord.NotFound, nextcord.Forbidden, AttributeError) as e_del:
-                        print(f"[DEBUG Musica] Erro (ignorado) ao deletar msg antiga em on_voice_state_update: {e_del}")
+                        print(f"[DEBUG Musica] Erro (ignorado) ao deletar msg antiga {old_message_id} em on_voice_state_update: {e_del}")
                         pass # Ignora se não encontrar, não tiver permissão ou canal/player não existir mais
                     except Exception as e_del_unk:
-                        print(f"❌ Erro INESPERADO ao deletar msg antiga em on_voice_state_update:")
+                        print(f"❌ Erro INESPERADO ao deletar msg antiga {old_message_id} em on_voice_state_update:")
                         traceback.print_exc()
                     finally:
                         if guild_id in self.active_control_messages:
