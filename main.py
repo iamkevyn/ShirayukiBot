@@ -131,7 +131,10 @@ async def on_ready():
         print("⚠️ O bot continuará funcionando, mas os comandos slash podem não estar disponíveis.")
     print("-> Sincronização de comandos concluída (ou falhou).")
 
-# Removido evento on_wavelink_node_ready
+@bot.event
+async def on_wavelink_node_ready(node: wavelink.Node):
+    """Evento chamado quando um nó Lavalink está pronto."""
+    print(f"✅ Nó Lavalink 		'{node.identifier}		' conectado e pronto!")
 
 # Inicia o servidor keep alive em background
 keep_alive() # Mantida chamada
