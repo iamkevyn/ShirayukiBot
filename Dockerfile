@@ -5,10 +5,11 @@ FROM python:3.10-slim
 # Define o diretório de trabalho dentro do contêiner
 WORKDIR /app
 
-# Instala as dependências de sistema necessárias para PyNaCl, ffmpeg e opus
+# Instala as dependências de sistema necessárias para PyNaCl, ffmpeg, opus e git
 # Atualiza a lista de pacotes, instala os pacotes e depois limpa o cache do apt
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        git \
         ffmpeg \
         libopus-dev \
         libsodium-dev \
