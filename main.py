@@ -18,8 +18,8 @@ token = os.getenv("DISCORD_TOKEN")
 lavalink_uri = os.getenv("LAVALINK_URI", "http://localhost:2333") # Default to localhost if not set
 lavalink_password = os.getenv("LAVALINK_PASSWORD", "youshallnotpass") # Default password
 
-# ID do servidor da Shira para registro imediato de comandos
-SHIRA_GUILD_ID = 1367345048458498219
+# ID do servidor da Shira será usado nos comandos da cog Musica.py
+# SHIRA_GUILD_ID = 1367345048458498219 # Movido para dentro da cog ou usado diretamente
 
 if not token:
     print("❌ CRÍTICO: Token do Discord não encontrado nas variáveis de ambiente.")
@@ -40,6 +40,8 @@ print("-> Inicializando o Bot...")
 class MusicBot(commands.Bot):
     def __init__(self, *args, **kwargs):
         print("--- [DIAGNÓSTICO] Iniciando __init__ da classe MusicBot ---")
+        # Removemos o debug_guilds daqui, pois causava erro.
+        # O registro imediato será feito via guild_ids nos comandos da cog.
         super().__init__(*args, **kwargs)
         self.loop.create_task(self.setup_hook()) # Chama setup_hook na inicialização
         print("--- [DIAGNÓSTICO] __init__ da classe MusicBot concluído ---")
@@ -72,7 +74,7 @@ class MusicBot(commands.Bot):
         cog_files = []
 
         if not os.path.isdir(cogs_dir):
-            print(f"⚠️ Diretório '{cogs_dir}' não encontrado. Nenhum cog será carregado.")
+            print(f"⚠️ Diretório 		'{cogs_dir}'		 não encontrado. Nenhum cog será carregado.")
             return
 
         for filename in os.listdir(cogs_dir):
@@ -101,24 +103,23 @@ class MusicBot(commands.Bot):
         loaded_extensions = list(self.extensions.keys())
         print(f"\n=== RESUMO DO CARREGAMENTO DE COGS ===")
         print(f"-> Total de cogs encontrados: {len(cog_files)}")
-        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
-        print(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
-        print(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
+        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {		', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
+        print(f"-> Cogs que falharam ({len(cogs_failed)}): {		', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
+        print(f"-> Extensões ativas ({len(loaded_extensions)}): {		', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
         print("=== FIM DO RESUMO ===\n")
 
-# Inicializa o bot com o ID do servidor da Shira como debug_guild
-# Isso garante registro imediato lá, mas mantém o registro global para outros servidores.
-bot = MusicBot(command_prefix="!", intents=intents, debug_guilds=[SHIRA_GUILD_ID])
-print(f"-> Bot instanciado com debug_guilds=[{SHIRA_GUILD_ID}].")
+# Inicializa o bot sem debug_guilds. O registro imediato será feito na cog Musica.
+bot = MusicBot(command_prefix="!", intents=intents)
+print("-> Bot instanciado.")
 
 @bot.event
 async def on_ready():
     print(f"\n✅ {bot.user.name} está online e pronto!")
-    # A sincronização aqui ainda tentará o registro global, mas o debug_guild garante a disponibilidade imediata no servidor da Shira.
-    print("-> Tentando sincronizar comandos slash em on_ready (global + debug guild)...")
+    # A sincronização aqui tentará o registro global.
+    # Comandos com guild_ids na cog Musica serão registrados imediatamente lá.
+    print("-> Tentando sincronizar comandos slash em on_ready (global + guild-specific)...")
     try:
         # Não passamos guild_ids aqui para permitir o registro global em paralelo.
-        # O debug_guilds na inicialização já cuida do registro imediato.
         synced = await bot.sync_application_commands()
         if synced is not None:
             print(f"🔄 Comandos slash sincronizados/enviados para registro: {len(synced)} comandos")
@@ -137,7 +138,7 @@ async def on_ready():
 async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
     """Evento chamado quando um nó Lavalink está pronto."""
     node = payload.node # Acessa o nó a partir do payload
-    print(f"✅ Nó Lavalink '{node.identifier}' conectado e pronto!")
+    print(f"✅ Nó Lavalink 		'{node.identifier}'		 conectado e pronto!")
 
 # Inicia o servidor keep alive em background
 keep_alive() # Mantida chamada
