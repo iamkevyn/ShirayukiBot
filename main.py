@@ -77,10 +77,10 @@ class MusicBot(commands.Bot):
                 cog_path = f"{cogs_dir}.{filename[:-3]}"
                 cog_files.append(cog_path)
 
-                # Pula explicitamente o cog de Música
-                if filename == "Musica.py":
-                    print(f"--> Pulando carregamento de: {cog_path} (TESTE)")
-                    continue
+                # Removido bloco que pulava Musica.py
+                # if filename == "Musica.py":
+                #     print(f"--> Pulando carregamento de: {cog_path} (TESTE)")
+                #     continue
 
                 print(f"--> Tentando carregar: {cog_path}")
                 try:
