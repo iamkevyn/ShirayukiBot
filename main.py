@@ -2,7 +2,7 @@ import nextcord
 import os
 import asyncio
 import traceback
-import wavelinkcord as wavelink # Alterado para usar o fork Wavelinkcord
+import wavelink # Revertido para Wavelink oficial
 from nextcord.ext import commands
 from dotenv import load_dotenv
 from keep_alive import keep_alive # Mantido import
@@ -53,7 +53,7 @@ class MusicBot(commands.Bot):
             print(f"--- [DIAGNÓSTICO] Verificando Wavelink: Versão {wavelink.__version__}, Atributos: {dir(wavelink)}")
             print(f"--- [DIAGNÓSTICO] Tentando conectar ao Lavalink em {lavalink_uri} ---")
             node: wavelink.Node = wavelink.Node(uri=lavalink_uri, password=lavalink_password)
-            await wavelink.NodePool.connect(client=self, nodes=[node]) # Alterado para NodePool (Wavelink v2)
+            await wavelink.Pool.connect(client=self, nodes=[node]) # Revertido para Pool (Wavelink v3+)
             # O evento on_wavelink_node_ready confirmará a conexão
 
             print("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook ---")
