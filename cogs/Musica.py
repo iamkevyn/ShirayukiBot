@@ -7,7 +7,7 @@ import nextcord
 from nextcord import Interaction, Embed, ButtonStyle, SlashOption, Color, VoiceChannel
 from nextcord.ui import View, Button, button # Import button decorator
 from nextcord.ext import commands, tasks
-import wavelinkcord as wavelink
+import wavelink
 import traceback
 import re
 import math
@@ -247,7 +247,7 @@ class Musica(commands.Cog):
         # self.autoleave.start() # Mantendo autoleave desativado conforme solicitado
 
     @commands.Cog.listener()
-    async def on_wavelink_node_ready(self, payload):
+    async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
         """Evento chamado quando um nó Lavalink está pronto."""
         try:
             print(f"✅ Nó Lavalink 	'{payload.node.identifier}	' (Sessão: {payload.session_id}) está pronto!")
@@ -259,7 +259,7 @@ class Musica(commands.Cog):
             traceback.print_exc()
 
     @commands.Cog.listener()
-    async def on_wavelink_track_start(self, payload):
+    async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
         """Evento chamado quando uma música começa a tocar."""
         try:
             player = payload.player
@@ -329,7 +329,7 @@ class Musica(commands.Cog):
             traceback.print_exc()
 
     @commands.Cog.listener()
-    async def on_wavelink_track_end(self, payload):
+    async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
         """Evento chamado quando uma música termina."""
         try:
             player = payload.player
