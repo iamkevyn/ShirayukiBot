@@ -7,7 +7,7 @@ from nextcord.ext import commands
 from dotenv import load_dotenv
 from keep_alive import keep_alive # Mantido import
 
-print("--- Iniciando Bot (TESTE SEM MÚSICA/WAVELINK) ---")
+print("--- Iniciando Bot ---")
 
 # Removida verificação de wavelink.ext.spotify
 
@@ -17,6 +17,9 @@ load_dotenv()
 token = os.getenv("DISCORD_TOKEN")
 lavalink_uri = os.getenv("LAVALINK_URI", "http://localhost:2333") # Default to localhost if not set
 lavalink_password = os.getenv("LAVALINK_PASSWORD", "youshallnotpass") # Default password
+
+# ID do servidor da Shira para registro imediato de comandos
+SHIRA_GUILD_ID = 1367345048458498219
 
 if not token:
     print("❌ CRÍTICO: Token do Discord não encontrado nas variáveis de ambiente.")
@@ -45,13 +48,13 @@ class MusicBot(commands.Bot):
         """Carrega os cogs e tenta conectar ao Lavalink."""
         print("--- [DIAGNÓSTICO] Iniciando setup_hook ---")
         try:
-            print(f"--- [DIAGNÓSTICO] Verificando Wavelink: Versão {wavelink.__version__}, Atributos: {dir(wavelink)}") # Adiciona verificação
+            print(f"--- [DIAGNÓSTICO] Verificando Wavelink: Versão {wavelink.__version__}, Atributos: {dir(wavelink)}")
             print(f"--- [DIAGNÓSTICO] Tentando conectar ao Lavalink em {lavalink_uri} ---")
             node: wavelink.Node = wavelink.Node(uri=lavalink_uri, password=lavalink_password)
             await wavelink.Pool.connect(client=self, nodes=[node]) # Tenta usar Pool em vez de NodePool
             # O evento on_wavelink_node_ready confirmará a conexão
 
-            print("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook (SEM MUSICA) ---")
+            print("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook ---")
             await self.load_cogs()
             print("--- [DIAGNÓSTICO] Carregamento de cogs concluído em setup_hook ---")
 
@@ -62,22 +65,20 @@ class MusicBot(commands.Bot):
         print("--- [DIAGNÓSTICO] setup_hook concluído (ou falhou) ---")
 
     async def load_cogs(self):
-        print("--- Carregando COGs (via setup_hook - SEM MUSICA) ---")
+        print("--- Carregando COGs (via setup_hook) ---")
         cogs_dir = "cogs"
         cogs_loaded = []
         cogs_failed = []
         cog_files = []
 
         if not os.path.isdir(cogs_dir):
-            print(f"⚠️ Diretório 		'{cogs_dir}		' não encontrado. Nenhum cog será carregado.")
+            print(f"⚠️ Diretório '{cogs_dir}' não encontrado. Nenhum cog será carregado.")
             return
 
         for filename in os.listdir(cogs_dir):
             if filename.endswith(".py") and not filename.startswith("__"):
                 cog_path = f"{cogs_dir}.{filename[:-3]}"
                 cog_files.append(cog_path)
-
-                # Removido bloco que pulava Musica.py
 
                 print(f"--> Tentando carregar: {cog_path}")
                 try:
@@ -98,25 +99,29 @@ class MusicBot(commands.Bot):
                     print(f"⚠️ Ignorando erro e continuando com os próximos cogs...")
 
         loaded_extensions = list(self.extensions.keys())
-        print(f"\n=== RESUMO DO CARREGAMENTO DE COGS (SEM MUSICA) ===")
-        print(f"-> Total de cogs encontrados (ignorando Musica): {len(cog_files) - 1 if 'cogs.Musica' in cog_files else len(cog_files)}")
-        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {		', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
-        print(f"-> Cogs que falharam ({len(cogs_failed)}): {		', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
-        print(f"-> Extensões ativas ({len(loaded_extensions)}): {		', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
+        print(f"\n=== RESUMO DO CARREGAMENTO DE COGS ===")
+        print(f"-> Total de cogs encontrados: {len(cog_files)}")
+        print(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
+        print(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
+        print(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
         print("=== FIM DO RESUMO ===\n")
 
-bot = MusicBot(command_prefix="!", intents=intents)
-print("-> Bot instanciado.")
+# Inicializa o bot com o ID do servidor da Shira como debug_guild
+# Isso garante registro imediato lá, mas mantém o registro global para outros servidores.
+bot = MusicBot(command_prefix="!", intents=intents, debug_guilds=[SHIRA_GUILD_ID])
+print(f"-> Bot instanciado com debug_guilds=[{SHIRA_GUILD_ID}].")
 
 @bot.event
 async def on_ready():
-    print(f"\n✅ {bot.user.name} está online e pronto! (SEM MÚSICA/WAVELINK)")
-    # Reativando sincronização de comandos slash
-    print("-> Tentando sincronizar comandos slash em on_ready...")
+    print(f"\n✅ {bot.user.name} está online e pronto!")
+    # A sincronização aqui ainda tentará o registro global, mas o debug_guild garante a disponibilidade imediata no servidor da Shira.
+    print("-> Tentando sincronizar comandos slash em on_ready (global + debug guild)...")
     try:
+        # Não passamos guild_ids aqui para permitir o registro global em paralelo.
+        # O debug_guilds na inicialização já cuida do registro imediato.
         synced = await bot.sync_application_commands()
         if synced is not None:
-            print(f"🔄 Comandos slash sincronizados: {len(synced)} comandos")
+            print(f"🔄 Comandos slash sincronizados/enviados para registro: {len(synced)} comandos")
         else:
             print("⚠️ A sincronização retornou None. Verifique se há comandos para sincronizar.")
     except nextcord.errors.NotFound as e:
@@ -125,14 +130,14 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Erro ao sincronizar comandos slash:")
         traceback.print_exc()
-        print("⚠️ O bot continuará funcionando, mas os comandos slash podem não estar disponíveis.")
+        print("⚠️ O bot continuará funcionando, mas os comandos slash podem não estar disponíveis imediatamente em todos os servidores.")
     print("-> Sincronização de comandos concluída (ou falhou).")
 
 @bot.event
 async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
     """Evento chamado quando um nó Lavalink está pronto."""
     node = payload.node # Acessa o nó a partir do payload
-    print(f"✅ Nó Lavalink 		'{node.identifier}'		 conectado e pronto!")
+    print(f"✅ Nó Lavalink '{node.identifier}' conectado e pronto!")
 
 # Inicia o servidor keep alive em background
 keep_alive() # Mantida chamada
