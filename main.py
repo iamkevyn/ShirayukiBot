@@ -3,16 +3,17 @@ import os
 import asyncio
 import traceback
 import mafic
-import logging # <--- ADICIONADO: Módulo de logging
+import logging
+from nextcord import Interaction # <--- ADICIONADO: Interaction para o comando de teste
 from nextcord.ext import commands
 from dotenv import load_dotenv
 from keep_alive import keep_alive
 
 # Configuração básica do logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)s:%(name)s: %(message)s')
-logger = logging.getLogger('discord_bot') # Logger específico para o bot
+logger = logging.getLogger('discord_bot')
 
-logger.info("--- Iniciando Bot (com Mafic e Logging Detalhado) ---")
+logger.info("--- Iniciando Bot (com Mafic, Logging Detalhado e Teste de Comando no Main) ---")
 
 logger.info("-> Carregando variáveis de ambiente...")
 load_dotenv()
@@ -108,14 +109,13 @@ class MusicBot(commands.Bot):
         logger.info(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
         logger.info(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
         
-        # Log detalhado dos comandos de aplicação carregados
         if loaded_extensions:
             logger.info("--- [DIAGNÓSTICO COMANDOS] Verificando comandos de aplicação carregados APÓS load_cogs ---")
-            all_app_cmds = self.get_application_commands()
-            if all_app_cmds:
-                logger.info(f"Total de comandos de aplicação detectados globalmente no bot: {len(all_app_cmds)}")
-                for cmd in all_app_cmds:
-                    logger.info(f"  -> Comando: '{cmd.qualified_name}', Tipo: {type(cmd)}, Guild IDs: {cmd.guild_ids}")
+            all_app_cmds_after_cogs = self.get_application_commands()
+            if all_app_cmds_after_cogs:
+                logger.info(f"Total de comandos de aplicação detectados globalmente no bot APÓS carregar cogs: {len(all_app_cmds_after_cogs)}")
+                for cmd in all_app_cmds_after_cogs:
+                    logger.info(f"  -> Comando (pós-cogs): '{cmd.qualified_name}', Tipo: {type(cmd)}, Guild IDs: {cmd.guild_ids}")
             else:
                 logger.warning("Nenhum comando de aplicação detectado globalmente no bot após carregar cogs.")
         logger.info("=== FIM DO RESUMO ===\n")
@@ -123,11 +123,18 @@ class MusicBot(commands.Bot):
 bot = MusicBot(command_prefix="!", intents=intents)
 logger.info("-> Bot (Mafic) instanciado.")
 
+# --- COMANDO DE TESTE DIRETO NO MAIN.PY ---
+@bot.slash_command(name="testemainslash", description="Um comando de teste simples no main.py")
+async def teste_main_slash(interaction: Interaction):
+    logger.info(f"--- [TESTE MAIN SLASH] Comando /testemainslash executado por {interaction.user} ---")
+    await interaction.response.send_message("Olá! Este é um comando de teste do main.py!", ephemeral=True)
+    logger.info("--- [TESTE MAIN SLASH] Resposta enviada. ---")
+# --- FIM DO COMANDO DE TESTE ---
+
 @bot.event
 async def on_ready():
     logger.info(f"\n✅ {bot.user.name} (Mafic) está online e pronto! ID: {bot.user.id}")
     logger.info("--- [DIAGNÓSTICO COMANDOS] Verificando comandos de aplicação ANTES da sincronização em on_ready ---")
-    # Lista de todos os comandos de aplicação (globais e de servidor) que o bot conhece
     all_app_cmds = bot.get_application_commands()
     if all_app_cmds:
         logger.info(f"Total de comandos de aplicação detectados globalmente no bot: {len(all_app_cmds)}")
@@ -138,10 +145,7 @@ async def on_ready():
 
     logger.info("-> Tentando sincronizar comandos slash globalmente em on_ready...")
     try:
-        # Força a sincronização apenas global, sem especificar guild_ids
-        # Passar uma lista vazia para guild_ids pode forçar a limpeza de comandos de servidor específicos se houver algum resquício.
-        # No entanto, o comportamento padrão de sync_application_commands() sem argumentos já é global.
-        synced = await bot.sync_application_commands() # Sincronização global
+        synced = await bot.sync_application_commands()
         if synced is not None:
             logger.info(f"🔄 Comandos slash sincronizados/enviados para registro global: {len(synced)} comandos.")
             for s_cmd in synced:
