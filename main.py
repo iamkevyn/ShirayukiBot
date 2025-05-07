@@ -45,34 +45,35 @@ class MusicBot(commands.Bot):
         logger.info("--- [DIAGNÓSTICO MAFIC] __init__ da classe MusicBot concluído ---")
 
     async def setup_hook(self) -> None:
-        logger.info("--- [DIAGNÓSTICO MAFIC] Iniciando setup_hook ---")
+        print("DEBUG: DENTRO DO SETUP_HOOK - LINHA INICIAL ANTES DE TUDO") # Nova linha de print adicionada
+        logger.info("--- [DIAGNÓSTICO] Iniciando setup_hook (Mafic temporariamente desativado para teste) ---") # Log ajustado
         try:
-            logger.info(f"--- [DIAGNÓSTICO MAFIC] Verificando Mafic: Versão {mafic.__version__}")
-            logger.info(f"--- [DIAGNÓSTICO MAFIC] Inicializando Mafic NodePool ---")
-            self.mafic_pool = mafic.NodePool(self)
+            # logger.info(f"--- [DIAGNÓSTICO MAFIC] Verificando Mafic: Versão {mafic.__version__}")
+            # logger.info(f"--- [DIAGNÓSTICO MAFIC] Inicializando Mafic NodePool ---")
+            # self.mafic_pool = mafic.NodePool(self)
             
-            logger.info(f"--- [DIAGNÓSTICO MAFIC] Tentando conectar ao Lavalink (Mafic) em {lavalink_host}:{lavalink_port} com label {lavalink_label} ---")
-            await self.mafic_pool.create_node(
-                host=lavalink_host,
-                port=lavalink_port,
-                label=lavalink_label,
-                password=lavalink_password,
-            )
-            logger.info("--- [DIAGNÓSTICO MAFIC] Chamada para create_node concluída. Aguardando on_mafic_node_ready na cog. ---")
+            # logger.info(f"--- [DIAGNÓSTICO MAFIC] Tentando conectar ao Lavalink (Mafic) em {lavalink_host}:{lavalink_port} com label {lavalink_label} ---")
+            # await self.mafic_pool.create_node(
+            #     host=lavalink_host,
+            #     port=lavalink_port,
+            #     label=lavalink_label,
+            #     password=lavalink_password,
+            # )
+            # logger.info("--- [DIAGNÓSTICO MAFIC] Chamada para create_node concluída. Aguardando on_mafic_node_ready na cog. ---")
 
-            logger.info("--- [DIAGNÓSTICO MAFIC] Iniciando carregamento de cogs em setup_hook ---")
+            logger.info("--- [DIAGNÓSTICO] Iniciando carregamento de cogs em setup_hook (Mafic desativado) ---") # Log ajustado
             logger.info("--- [DEBUG] PRESTES A CHAMAR self.load_cogs() ---")
             await self.load_cogs()
-            logger.info("--- [DIAGNÓSTICO MAFIC] Carregamento de cogs concluído em setup_hook ---")
+            logger.info("--- [DIAGNÓSTICO] Carregamento de cogs concluído em setup_hook (Mafic desativado) ---") # Log ajustado
 
         except Exception as e:
-            logger.critical(f"❌ CRÍTICO: Erro durante o setup_hook (Mafic ou Cogs): {e}", exc_info=True)
+            logger.critical(f"❌ CRÍTICO: Erro durante o setup_hook (Cogs): {e}", exc_info=True) # Log ajustado
             logger.warning("⚠️ O bot pode não funcionar corretamente devido ao erro no setup_hook.")
-        logger.info("--- [DIAGNÓSTICO MAFIC] setup_hook concluído (ou falhou) ---")
+        logger.info("--- [DIAGNÓSTICO] setup_hook (Mafic desativado) concluído (ou falhou) ---") # Log ajustado
 
     async def load_cogs(self):
         logger.info("--- [DEBUG] DENTRO DE self.load_cogs() --- INÍCIO DA FUNÇÃO ---")
-        logger.info("--- Carregando COGs (via setup_hook com Mafic) ---")
+        logger.info("--- Carregando COGs (Mafic desativado para este teste) ---") # Log ajustado
         cogs_dir = "cogs"
         cogs_loaded = []
         cogs_failed = []
@@ -93,11 +94,9 @@ class MusicBot(commands.Bot):
                     logger.info(f"✅ Cog {filename} carregado com sucesso.")
                     cogs_loaded.append(filename)
 
-                    # --- INÍCIO DA NOVA INSPEÇÃO DETALHADA DA COG ---
                     cog_name_to_inspect = None
-                    # Assumindo que o nome da classe da cog é o nome do arquivo capitalizado
                     if filename == "Musica.py": 
-                        cog_name_to_inspect = "Musica" # Nome da classe na cog Musica.py
+                        cog_name_to_inspect = "Musica"
                     elif filename == "Comandos.py":
                         cog_name_to_inspect = "Comandos"
                     elif filename == "Economia.py":
@@ -154,7 +153,6 @@ class MusicBot(commands.Bot):
                                 logger.warning(f"  -> Atributo __cog_slash_commands__ não encontrado, vazio ou não é um dict DENTRO da cog '{cog_instance.qualified_name}'. Valor: {cog_slash_commands_internal}")
                         else:
                             logger.warning(f"--- [INSPEÇÃO COG] Não foi possível obter a instância da cog '{cog_name_to_inspect}' usando self.get_cog().")
-                    # --- FIM DA NOVA INSPEÇÃO DETALHADA DA COG ---
 
                 except commands.errors.NoEntryPointError:
                     logger.warning(f"⚠️ Aviso: Cog {filename} não possui uma função 'setup'. Pulando.")
@@ -168,7 +166,7 @@ class MusicBot(commands.Bot):
                     logger.warning(f"⚠️ Ignorando erro e continuando com os próximos cogs...")
 
         loaded_extensions = list(self.extensions.keys())
-        logger.info(f"\n=== RESUMO DO CARREGAMENTO DE COGS (MAFIC) ===")
+        logger.info(f"\n=== RESUMO DO CARREGAMENTO DE COGS (Mafic desativado) ===") # Log ajustado
         logger.info(f"-> Total de cogs encontrados: {len(cog_files)}")
         logger.info(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
         logger.info(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
@@ -207,18 +205,6 @@ async def on_ready():
 
     logger.info("-> Tentando sincronizar comandos slash globalmente em on_ready...")
     try:
-        # ID do servidor Shira para teste rápido
-        shira_guild_id = 1367345048458498219 
-        # Sincroniza globalmente E para o servidor de teste
-        # Isso garante que os comandos apareçam rapidamente no servidor de teste
-        # e também sejam registrados globalmente.
-        # Nota: bot.sync_application_commands() sem argumentos sincroniza globalmente.
-        # Para sincronizar em um servidor específico, pode-se usar:
-        # await bot.sync_application_commands(guild_id=shira_guild_id)
-        # Ou, para fazer ambos, chamamos duas vezes ou gerenciamos a lista de comandos.
-        # Por simplicidade no teste, vamos focar na sincronização global primeiro, 
-        # e depois adicionar a específica se a global continuar problemática.
-
         synced_global = await bot.sync_application_commands()
         if synced_global is not None:
             logger.info(f"🔄 Comandos slash sincronizados/enviados para registro GLOBAL: {len(synced_global)} comandos.")
@@ -226,16 +212,6 @@ async def on_ready():
                 logger.info(f"    Synced Global: '{s_cmd.name}', ID: {s_cmd.id}, Guild ID: {s_cmd.guild_id}")
         else:
             logger.warning("⚠️ A sincronização GLOBAL retornou None.")
-
-        # Tentativa de sincronizar para o servidor de teste específico
-        # logger.info(f"-> Tentando sincronizar comandos slash para o servidor de teste Shira (ID: {shira_guild_id})...")
-        # synced_guild = await bot.sync_application_commands(guild_id=shira_guild_id)
-        # if synced_guild is not None:
-        #     logger.info(f"🔄 Comandos slash sincronizados/enviados para registro no SERVIDOR DE TESTE ({shira_guild_id}): {len(synced_guild)} comandos.")
-        #     for s_cmd_guild in synced_guild:
-        #         logger.info(f"    Synced Guild ({shira_guild_id}): '{s_cmd_guild.name}', ID: {s_cmd_guild.id}")
-        # else:
-        #     logger.warning(f"⚠️ A sincronização para o SERVIDOR DE TESTE ({shira_guild_id}) retornou None.")
 
     except nextcord.errors.ApplicationInvokeError as e:
         logger.error(f"❌ Erro de Invocação de Aplicação durante sincronização: {e.original if e.original else e}", exc_info=True)
