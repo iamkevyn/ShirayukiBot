@@ -1,6 +1,6 @@
 # Use uma imagem base oficial do Python. 
-# python:3.10-slim é uma boa escolha por ser menor.
-FROM python:3.10-slim
+# python:3.12-slim é uma boa escolha por ser menor e compatível com Nextcord 3.x.
+FROM python:3.12-slim
 
 # Define o diretório de trabalho dentro do contêiner
 WORKDIR /app
