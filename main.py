@@ -4,7 +4,7 @@ import asyncio
 import traceback
 import mafic
 import logging
-from nextcord import Interaction # <--- ADICIONADO: Interaction para o comando de teste
+from nextcord import Interaction
 from nextcord.ext import commands
 from dotenv import load_dotenv
 from keep_alive import keep_alive
@@ -13,7 +13,7 @@ from keep_alive import keep_alive
 logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)s:%(name)s: %(message)s')
 logger = logging.getLogger('discord_bot')
 
-logger.info("--- Iniciando Bot (com Mafic, Logging Detalhado e Teste de Comando no Main) ---")
+logger.info("--- Iniciando Bot (com Mafic, Logging Detalhado e Inspeção de Cog) ---")
 
 logger.info("-> Carregando variáveis de ambiente...")
 load_dotenv()
@@ -77,7 +77,7 @@ class MusicBot(commands.Bot):
         cog_files = []
 
         if not os.path.isdir(cogs_dir):
-            logger.warning(f"⚠️ Diretório 		'{cogs_dir}'		 não encontrado. Nenhum cog será carregado.")
+            logger.warning(f"⚠️ Diretório '{cogs_dir}' não encontrado. Nenhum cog será carregado.")
             return
 
         for filename in os.listdir(cogs_dir):
@@ -90,6 +90,64 @@ class MusicBot(commands.Bot):
                     self.load_extension(cog_path)
                     logger.info(f"✅ Cog {filename} carregado com sucesso.")
                     cogs_loaded.append(filename)
+
+                    # --- INÍCIO DA NOVA INSPEÇÃO DETALHADA DA COG ---
+                    cog_name_to_inspect = None
+                    # Assumindo que o nome da classe da cog é o nome do arquivo capitalizado
+                    # ou, para nosso teste, especificamente "MusicaMinima"
+                    if filename == "Musica.py": # Nosso arquivo de teste atual com a cog MusicaMinima
+                        cog_name_to_inspect = "MusicaMinima"
+                    else:
+                        # Tenta uma suposição genérica para outras cogs
+                        cog_name_to_inspect = filename[:-3].capitalize() 
+
+                    if cog_name_to_inspect:
+                        cog_instance = self.get_cog(cog_name_to_inspect)
+                        if cog_instance:
+                            logger.info(f"--- [INSPEÇÃO COG] Instância da cog '{cog_instance.qualified_name}' (Tipo: {type(cog_instance)}) obtida.")
+                            
+                            # Tenta listar comandos de aplicação diretamente da instância da cog
+                            cog_app_commands_from_instance = []
+                            if hasattr(cog_instance, 'get_application_commands'):
+                                try:
+                                    cog_app_commands_from_instance = cog_instance.get_application_commands()
+                                except Exception as e_get_app_cmds:
+                                     logger.error(f"    -- Erro ao chamar get_application_commands() na cog '{cog_instance.qualified_name}': {e_get_app_cmds}", exc_info=False) # exc_info=False para não poluir muito
+
+                            if cog_app_commands_from_instance:
+                                logger.info(f"  -> Comandos de aplicação (via get_application_commands) DENTRO da cog '{cog_instance.qualified_name}': {len(cog_app_commands_from_instance)}")
+                                for app_cmd in cog_app_commands_from_instance:
+                                    logger.info(f"    -- Cog App Cmd (instância): '{app_cmd.qualified_name}', Tipo: {type(app_cmd)}")
+                            else:
+                                logger.warning(f"  -> Nenhum comando de aplicação (via get_application_commands) encontrado DENTRO da cog '{cog_instance.qualified_name}'.")
+
+                            # Tenta listar todos os comandos (incluindo os de texto, se houver) da instância
+                            cog_all_commands_from_instance = []
+                            try:
+                                cog_all_commands_from_instance = cog_instance.get_commands()
+                            except Exception as e_get_cmds:
+                                logger.error(f"    -- Erro ao chamar get_commands() na cog '{cog_instance.qualified_name}': {e_get_cmds}", exc_info=False)
+
+                            if cog_all_commands_from_instance:
+                                logger.info(f"  -> Comandos (gerais via get_commands) DENTRO da cog '{cog_instance.qualified_name}': {len(cog_all_commands_from_instance)}")
+                                for cmd_obj in cog_all_commands_from_instance:
+                                    logger.info(f"    -- Cog Cmd Geral (instância): '{cmd_obj.qualified_name}', Tipo: {type(cmd_obj)}")
+                            else:
+                                logger.warning(f"  -> Nenhum comando (geral via get_commands) encontrado DENTRO da cog '{cog_instance.qualified_name}'.")
+                            
+                            # Listar todos os slash commands registrados na cog (método mais direto para slash commands em cogs)
+                            # nextcord.ext.commands.Cog armazena os comandos de aplicação em __cog_application_commands__
+                            # e os slash commands em __cog_slash_commands__ (este último é o mais relevante para nós)
+                            cog_slash_commands_internal = getattr(cog_instance, '__cog_slash_commands__', {})
+                            if cog_slash_commands_internal and isinstance(cog_slash_commands_internal, dict) and cog_slash_commands_internal:
+                                logger.info(f"  -> Atributo __cog_slash_commands__ DENTRO da cog '{cog_instance.qualified_name}': {len(cog_slash_commands_internal)} comandos.")
+                                for cmd_name, cmd_obj_internal in cog_slash_commands_internal.items():
+                                     logger.info(f"    -- Cog Slash Cmd Interno: '{cmd_name}' (Objeto: {cmd_obj_internal.name if hasattr(cmd_obj_internal, 'name') else type(cmd_obj_internal)}) - Tipo do objeto: {type(cmd_obj_internal)}")
+                            else:
+                                logger.warning(f"  -> Atributo __cog_slash_commands__ não encontrado, vazio ou não é um dict DENTRO da cog '{cog_instance.qualified_name}'. Valor: {cog_slash_commands_internal}")
+                        else:
+                            logger.warning(f"--- [INSPEÇÃO COG] Não foi possível obter a instância da cog '{cog_name_to_inspect}' usando self.get_cog().")
+                    # --- FIM DA NOVA INSPEÇÃO DETALHADA DA COG ---
 
                 except commands.errors.NoEntryPointError:
                     logger.warning(f"⚠️ Aviso: Cog {filename} não possui uma função 'setup'. Pulando.")
@@ -109,15 +167,15 @@ class MusicBot(commands.Bot):
         logger.info(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
         logger.info(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
         
-        if loaded_extensions:
-            logger.info("--- [DIAGNÓSTICO COMANDOS] Verificando comandos de aplicação carregados APÓS load_cogs ---")
-            all_app_cmds_after_cogs = self.get_application_commands()
-            if all_app_cmds_after_cogs:
-                logger.info(f"Total de comandos de aplicação detectados globalmente no bot APÓS carregar cogs: {len(all_app_cmds_after_cogs)}")
-                for cmd in all_app_cmds_after_cogs:
-                    logger.info(f"  -> Comando (pós-cogs): '{cmd.qualified_name}', Tipo: {type(cmd)}, Guild IDs: {cmd.guild_ids}")
-            else:
-                logger.warning("Nenhum comando de aplicação detectado globalmente no bot após carregar cogs.")
+        # Log detalhado dos comandos de aplicação GLOBAIS DO BOT após carregar todas as cogs
+        logger.info("--- [DIAGNÓSTICO COMANDOS GLOBAIS] Verificando comandos de aplicação GLOBAIS DO BOT APÓS load_cogs ---")
+        all_app_cmds_after_cogs = self.get_application_commands()
+        if all_app_cmds_after_cogs:
+            logger.info(f"Total de comandos de aplicação detectados GLOBALMENTE NO BOT APÓS carregar cogs: {len(all_app_cmds_after_cogs)}")
+            for cmd in all_app_cmds_after_cogs:
+                logger.info(f"  -> Comando Global (pós-cogs): '{cmd.qualified_name}', Tipo: {type(cmd)}, Guild IDs: {cmd.guild_ids}")
+        else:
+            logger.warning("Nenhum comando de aplicação detectado GLOBALMENTE NO BOT após carregar cogs.")
         logger.info("=== FIM DO RESUMO ===\n")
 
 bot = MusicBot(command_prefix="!", intents=intents)
@@ -134,14 +192,14 @@ async def teste_main_slash(interaction: Interaction):
 @bot.event
 async def on_ready():
     logger.info(f"\n✅ {bot.user.name} (Mafic) está online e pronto! ID: {bot.user.id}")
-    logger.info("--- [DIAGNÓSTICO COMANDOS] Verificando comandos de aplicação ANTES da sincronização em on_ready ---")
-    all_app_cmds = bot.get_application_commands()
-    if all_app_cmds:
-        logger.info(f"Total de comandos de aplicação detectados globalmente no bot: {len(all_app_cmds)}")
-        for cmd in all_app_cmds:
-            logger.info(f"  -> Comando: '{cmd.qualified_name}', Tipo: {type(cmd)}, Guild IDs: {cmd.guild_ids}, Descrição: {cmd.description}")
+    logger.info("--- [DIAGNÓSTICO COMANDOS GLOBAIS] Verificando comandos de aplicação GLOBAIS DO BOT ANTES da sincronização em on_ready ---")
+    all_app_cmds_on_ready = bot.get_application_commands()
+    if all_app_cmds_on_ready:
+        logger.info(f"Total de comandos de aplicação detectados GLOBALMENTE NO BOT (on_ready): {len(all_app_cmds_on_ready)}")
+        for cmd in all_app_cmds_on_ready:
+            logger.info(f"  -> Comando Global (on_ready): '{cmd.qualified_name}', Tipo: {type(cmd)}, Guild IDs: {cmd.guild_ids}, Descrição: {cmd.description}")
     else:
-        logger.warning("Nenhum comando de aplicação detectado globalmente no bot antes da sincronização.")
+        logger.warning("Nenhum comando de aplicação detectado GLOBALMENTE NO BOT (on_ready) antes da sincronização.")
 
     logger.info("-> Tentando sincronizar comandos slash globalmente em on_ready...")
     try:
