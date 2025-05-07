@@ -9,6 +9,8 @@ from nextcord.ext import commands
 from dotenv import load_dotenv
 from keep_alive import keep_alive
 
+print(f"--- VERSÃO DO NEXTCORD: {nextcord.__version__} ---") # Adicionado para imprimir a versão do Nextcord
+
 # Configuração básica do logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)s:%(name)s: %(message)s')
 logger = logging.getLogger('discord_bot')
