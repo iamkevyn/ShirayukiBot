@@ -5,38 +5,26 @@ FROM python:3.12-slim
 # Define o diretório de trabalho dentro do contêiner
 WORKDIR /app
 
-# Instala as dependências de sistema necessárias
-# build-essential, python3-dev, pkg-config e cargo são para compilar pacotes Python que não têm wheels para ARM ou certas versões de Python
+# Instala as dependências de sistema necessárias para PyNaCl, ffmpeg, opus e git
+# Atualiza a lista de pacotes, instala os pacotes e depois limpa o cache do apt
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
         ffmpeg \
         libopus-dev \
         libsodium-dev \
-        build-essential \
-        python3-dev \
-        pkg-config \
-        cargo \
+        # Adicione quaisquer outras dependências de sistema aqui, se necessário
     && rm -rf /var/lib/apt/lists/*
 
 # Copia o arquivo de dependências Python para o diretório de trabalho
-# Primeiro o pyproject.toml e poetry.lock para aproveitar o cache do Docker se não mudarem
-COPY pyproject.toml poetry.lock* .
+COPY requirements.txt .
 
-# Instala o Poetry
-RUN pip install poetry
-
-# Configura o Poetry para não criar virtualenvs dentro do projeto, o que é melhor para Docker
-RUN poetry config virtualenvs.create false
-
-# Instala as dependências do projeto usando Poetry
-# --no-root para não instalar o projeto em si como editável, apenas as dependências
-# --no-interaction para não pedir inputs
-RUN poetry install --no-root --no-interaction --no-ansi
+# Instala as dependências Python
+# --no-cache-dir economiza espaço na imagem
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia o restante do código da aplicação para o diretório de trabalho
 COPY . .
 
 # Define o comando padrão para executar a aplicação quando o contêiner iniciar
-# Usando poetry run para garantir que executa no ambiente correto
-CMD ["poetry", "run", "python", "main.py"]
+CMD ["python", "main.py"]
