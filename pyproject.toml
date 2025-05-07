@@ -9,23 +9,23 @@ readme = "README.md"
 python = "^3.12"
 nextcord = {extras = ["voice"], version = ">=3.1.0"} # Atualizado para Nextcord 3.x
 wavelink = {version = ">=3.1.0", extras = ["spotify"]}
-PyNaCl = "^1.5.0"
+PyNaCl = ">=1.3.0, <1.5.0" # Ajustado para compatibilidade com Nextcord 3.x
 python-dotenv = "^1.0.1"
-flask = "^3.0.0" # Mantido, verificar compatibilidade se houver problemas
+flask = "^3.0.0" 
 setuptools = ">=65.5.0"
 psutil = "^5.9.8"
-aiohttp = "^3.9.0" # Atualizado para versão compatível com Python 3.12
-yarl = "^1.9.0" # Atualizado
-multidict = "^6.0.0" # Atualizado
-frozenlist = "^1.4.0" # Atualizado
+aiohttp = "^3.9.0" 
+yarl = "^1.9.0" 
+multidict = "^6.0.0" 
+frozenlist = "^1.4.0" 
 spotipy = "^2.23.0"
-yt-dlp = "^2023.12.30" # Versão um pouco mais recente, pode ajudar
-qrcode = {extras = ["pil"], version = "*"} # Adicionado qrcode que estava no requirements.txt
-pytz = "*" # Adicionado pytz
-wikipedia-api = "*" # Adicionado wikipedia-api
-googletrans = "==4.0.0rc1" # Mantido, já era rc
-pyfiglet = "*" # Adicionado pyfiglet
-mafic = "^2.10.1" # Mantido, verificar se precisa de ajuste para wavelink 3.x
+yt-dlp = "^2023.12.30" 
+qrcode = {extras = ["pil"], version = "*"}
+pytz = "*"
+wikipedia-api = "*"
+googletrans = "==4.0.0rc1"
+pyfiglet = "*"
+mafic = "^2.10.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
