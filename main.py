@@ -61,6 +61,7 @@ class MusicBot(commands.Bot):
             logger.info("--- [DIAGNÓSTICO MAFIC] Chamada para create_node concluída. Aguardando on_mafic_node_ready na cog. ---")
 
             logger.info("--- [DIAGNÓSTICO MAFIC] Iniciando carregamento de cogs em setup_hook ---")
+            logger.info("--- [DEBUG] PRESTES A CHAMAR self.load_cogs() ---")
             await self.load_cogs()
             logger.info("--- [DIAGNÓSTICO MAFIC] Carregamento de cogs concluído em setup_hook ---")
 
@@ -70,6 +71,7 @@ class MusicBot(commands.Bot):
         logger.info("--- [DIAGNÓSTICO MAFIC] setup_hook concluído (ou falhou) ---")
 
     async def load_cogs(self):
+        logger.info("--- [DEBUG] DENTRO DE self.load_cogs() --- INÍCIO DA FUNÇÃO ---")
         logger.info("--- Carregando COGs (via setup_hook com Mafic) ---")
         cogs_dir = "cogs"
         cogs_loaded = []
@@ -94,25 +96,34 @@ class MusicBot(commands.Bot):
                     # --- INÍCIO DA NOVA INSPEÇÃO DETALHADA DA COG ---
                     cog_name_to_inspect = None
                     # Assumindo que o nome da classe da cog é o nome do arquivo capitalizado
-                    # ou, para nosso teste, especificamente "MusicaMinima"
-                    if filename == "Musica.py": # Nosso arquivo de teste atual com a cog MusicaMinima
-                        cog_name_to_inspect = "MusicaMinima"
+                    if filename == "Musica.py": 
+                        cog_name_to_inspect = "Musica" # Nome da classe na cog Musica.py
+                    elif filename == "Comandos.py":
+                        cog_name_to_inspect = "Comandos"
+                    elif filename == "Economia.py":
+                        cog_name_to_inspect = "Economia"
+                    elif filename == "Informacoes.py":
+                        cog_name_to_inspect = "Informacoes"
+                    elif filename == "Interacoes.py":
+                        cog_name_to_inspect = "Interacoes"
+                    elif filename == "Jogos.py":
+                        cog_name_to_inspect = "Jogos"
+                    elif filename == "Utilitarios.py":
+                        cog_name_to_inspect = "Utilitarios"
                     else:
-                        # Tenta uma suposição genérica para outras cogs
-                        cog_name_to_inspect = filename[:-3].capitalize() 
+                        cog_name_to_inspect = filename[:-3].capitalize()
 
                     if cog_name_to_inspect:
                         cog_instance = self.get_cog(cog_name_to_inspect)
                         if cog_instance:
                             logger.info(f"--- [INSPEÇÃO COG] Instância da cog '{cog_instance.qualified_name}' (Tipo: {type(cog_instance)}) obtida.")
                             
-                            # Tenta listar comandos de aplicação diretamente da instância da cog
                             cog_app_commands_from_instance = []
                             if hasattr(cog_instance, 'get_application_commands'):
                                 try:
                                     cog_app_commands_from_instance = cog_instance.get_application_commands()
                                 except Exception as e_get_app_cmds:
-                                     logger.error(f"    -- Erro ao chamar get_application_commands() na cog '{cog_instance.qualified_name}': {e_get_app_cmds}", exc_info=False) # exc_info=False para não poluir muito
+                                     logger.error(f"    -- Erro ao chamar get_application_commands() na cog '{cog_instance.qualified_name}': {e_get_app_cmds}", exc_info=False)
 
                             if cog_app_commands_from_instance:
                                 logger.info(f"  -> Comandos de aplicação (via get_application_commands) DENTRO da cog '{cog_instance.qualified_name}': {len(cog_app_commands_from_instance)}")
@@ -121,7 +132,6 @@ class MusicBot(commands.Bot):
                             else:
                                 logger.warning(f"  -> Nenhum comando de aplicação (via get_application_commands) encontrado DENTRO da cog '{cog_instance.qualified_name}'.")
 
-                            # Tenta listar todos os comandos (incluindo os de texto, se houver) da instância
                             cog_all_commands_from_instance = []
                             try:
                                 cog_all_commands_from_instance = cog_instance.get_commands()
@@ -135,9 +145,6 @@ class MusicBot(commands.Bot):
                             else:
                                 logger.warning(f"  -> Nenhum comando (geral via get_commands) encontrado DENTRO da cog '{cog_instance.qualified_name}'.")
                             
-                            # Listar todos os slash commands registrados na cog (método mais direto para slash commands em cogs)
-                            # nextcord.ext.commands.Cog armazena os comandos de aplicação em __cog_application_commands__
-                            # e os slash commands em __cog_slash_commands__ (este último é o mais relevante para nós)
                             cog_slash_commands_internal = getattr(cog_instance, '__cog_slash_commands__', {})
                             if cog_slash_commands_internal and isinstance(cog_slash_commands_internal, dict) and cog_slash_commands_internal:
                                 logger.info(f"  -> Atributo __cog_slash_commands__ DENTRO da cog '{cog_instance.qualified_name}': {len(cog_slash_commands_internal)} comandos.")
@@ -167,7 +174,6 @@ class MusicBot(commands.Bot):
         logger.info(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
         logger.info(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
         
-        # Log detalhado dos comandos de aplicação GLOBAIS DO BOT após carregar todas as cogs
         logger.info("--- [DIAGNÓSTICO COMANDOS GLOBAIS] Verificando comandos de aplicação GLOBAIS DO BOT APÓS load_cogs ---")
         all_app_cmds_after_cogs = self.get_application_commands()
         if all_app_cmds_after_cogs:
@@ -181,13 +187,11 @@ class MusicBot(commands.Bot):
 bot = MusicBot(command_prefix="!", intents=intents)
 logger.info("-> Bot (Mafic) instanciado.")
 
-# --- COMANDO DE TESTE DIRETO NO MAIN.PY ---
 @bot.slash_command(name="testemainslash", description="Um comando de teste simples no main.py")
 async def teste_main_slash(interaction: Interaction):
     logger.info(f"--- [TESTE MAIN SLASH] Comando /testemainslash executado por {interaction.user} ---")
     await interaction.response.send_message("Olá! Este é um comando de teste do main.py!", ephemeral=True)
     logger.info("--- [TESTE MAIN SLASH] Resposta enviada. ---")
-# --- FIM DO COMANDO DE TESTE ---
 
 @bot.event
 async def on_ready():
@@ -203,20 +207,43 @@ async def on_ready():
 
     logger.info("-> Tentando sincronizar comandos slash globalmente em on_ready...")
     try:
-        synced = await bot.sync_application_commands()
-        if synced is not None:
-            logger.info(f"🔄 Comandos slash sincronizados/enviados para registro global: {len(synced)} comandos.")
-            for s_cmd in synced:
-                logger.info(f"    Synced: '{s_cmd.name}', ID: {s_cmd.id}, Guild ID: {s_cmd.guild_id}")
+        # ID do servidor Shira para teste rápido
+        shira_guild_id = 1367345048458498219 
+        # Sincroniza globalmente E para o servidor de teste
+        # Isso garante que os comandos apareçam rapidamente no servidor de teste
+        # e também sejam registrados globalmente.
+        # Nota: bot.sync_application_commands() sem argumentos sincroniza globalmente.
+        # Para sincronizar em um servidor específico, pode-se usar:
+        # await bot.sync_application_commands(guild_id=shira_guild_id)
+        # Ou, para fazer ambos, chamamos duas vezes ou gerenciamos a lista de comandos.
+        # Por simplicidade no teste, vamos focar na sincronização global primeiro, 
+        # e depois adicionar a específica se a global continuar problemática.
+
+        synced_global = await bot.sync_application_commands()
+        if synced_global is not None:
+            logger.info(f"🔄 Comandos slash sincronizados/enviados para registro GLOBAL: {len(synced_global)} comandos.")
+            for s_cmd in synced_global:
+                logger.info(f"    Synced Global: '{s_cmd.name}', ID: {s_cmd.id}, Guild ID: {s_cmd.guild_id}")
         else:
-            logger.warning("⚠️ A sincronização global retornou None. Verifique se há comandos para sincronizar ou se já estão sincronizados.")
+            logger.warning("⚠️ A sincronização GLOBAL retornou None.")
+
+        # Tentativa de sincronizar para o servidor de teste específico
+        # logger.info(f"-> Tentando sincronizar comandos slash para o servidor de teste Shira (ID: {shira_guild_id})...")
+        # synced_guild = await bot.sync_application_commands(guild_id=shira_guild_id)
+        # if synced_guild is not None:
+        #     logger.info(f"🔄 Comandos slash sincronizados/enviados para registro no SERVIDOR DE TESTE ({shira_guild_id}): {len(synced_guild)} comandos.")
+        #     for s_cmd_guild in synced_guild:
+        #         logger.info(f"    Synced Guild ({shira_guild_id}): '{s_cmd_guild.name}', ID: {s_cmd_guild.id}")
+        # else:
+        #     logger.warning(f"⚠️ A sincronização para o SERVIDOR DE TESTE ({shira_guild_id}) retornou None.")
+
     except nextcord.errors.ApplicationInvokeError as e:
-        logger.error(f"❌ Erro de Invocação de Aplicação durante sincronização global: {e.original if e.original else e}", exc_info=True)
+        logger.error(f"❌ Erro de Invocação de Aplicação durante sincronização: {e.original if e.original else e}", exc_info=True)
     except nextcord.errors.HTTPException as e:
-        logger.error(f"❌ Erro HTTP durante sincronização global: Status {e.status}, Código {e.code}, Texto: {e.text}", exc_info=True)
+        logger.error(f"❌ Erro HTTP durante sincronização: Status {e.status}, Código {e.code}, Texto: {e.text}", exc_info=True)
     except Exception as e:
-        logger.error(f"❌ Erro genérico ao sincronizar comandos slash globalmente: {e}", exc_info=True)
-    logger.info("-> Sincronização de comandos global concluída (ou falhou).")
+        logger.error(f"❌ Erro genérico ao sincronizar comandos slash: {e}", exc_info=True)
+    logger.info("-> Sincronização de comandos concluída (ou falhou).")
 
 keep_alive()
 
