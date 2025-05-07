@@ -1,4 +1,4 @@
-nextcord[voice]>=2.7.0
+nextcord[voice]>=3.0.0
 PyNaCl
 python-dotenv==1.0.1
 flask==3.0.0
