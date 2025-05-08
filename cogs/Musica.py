@@ -199,12 +199,12 @@ class Musica(commands.Cog):
         embed.add_field(name="Autor", value=current_track.author, inline=True)
         embed.add_field(name="Duração", value=self.format_duration(current_track.length), inline=True)
         embed.add_field(name="Fonte", value=current_track.source.capitalize(), inline=True)
-        
         loop_mode_text = "Desativado"
         if player.loop == mafic.LoopType.TRACK: loop_mode_text = "Faixa Atual"
         elif player.loop == mafic.LoopType.QUEUE: loop_mode_text = "Fila Inteira"
         embed.add_field(name="Loop", value=loop_mode_text, inline=True)
         embed.add_field(name="Volume", value=f"{player.volume}%", inline=True)
+                # (Linhas anteriores da função update_now_playing_message)
 
         if current_track.artwork_url:
             embed.set_thumbnail(url=current_track.artwork_url)
@@ -215,10 +215,12 @@ class Musica(commands.Cog):
                 queue_display.append(f"{i+1}. {item.title} ({self.format_duration(item.length)})")
         
         embed.add_field(name=f"Próximas na Fila ({len(player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
-       embed.set_footer(text=f"Adicionado por: {current_track.requester.display_name if current_track.requester else 'Desconhecido'}", icon_url=current_track.requester.display_avatar.url if current_track.requester else self.bot.user.display_avatar.url)
+        # A linha abaixo é a que precisava de correção na indentação:
+        embed.set_footer(text=f"Adicionado por: {current_track.requester.display_name if current_track.requester else 'Desconhecido'}", icon_url=current_track.requester.display_avatar.url if current_track.requester else self.bot.user.display_avatar.url)
 
         await message.edit(content=None, embed=embed, view=PlayerControls(player, self))
 
+    # (Restante da classe, incluindo a função format_duration, se estiver nesse intervalo)
     def format_duration(self, milliseconds: int) -> str:
         """Formata duração de milissegundos para HH:MM:SS ou MM:SS."""
         if milliseconds is None: return "N/A"
