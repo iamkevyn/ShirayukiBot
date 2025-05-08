@@ -1,3 +1,4 @@
+from typing import Optional # ADICIONADO PARA CORRIGIR NameError
 # /home/ubuntu/ShirayukiBot/cogs/Economia.py
 # Cog para o sistema de economia do bot.
 
@@ -346,589 +347,523 @@ class InventoryView(ui.View):
         for item_id, inv_item_data, shop_item_data in self.items_on_page:
             if shop_item_data and shop_item_data.get("usable"):
                 button_emoji = shop_item_data.get("emoji", "🔧")
-                self.add_item(ui.Button(label=f"Usar {shop_item_data["name"]}", 
+                self.add_item(ui.Button(label=f"Usar {shop_item_data['name']}", 
                                          style=ButtonStyle.blurple, 
                                          custom_id=f"use_{item_id}", 
                                          emoji=button_emoji,
                                          row=(self.children.index(self.children[-1]) // 5) + 1 if self.children else 1))
 
-    # Callbacks para navegação e uso de itens serão tratados no comando /inventario
-
-# --- Cog Economia --- 
+# --- Cog Principal de Economia ---
 class Economia(commands.Cog):
-    """Cog responsável pelos comandos do sistema de economia."""
-
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
-        self.currency_emoji = get_emoji(bot, "money") 
         self.economy_manager = EconomyManager(ECONOMY_FILE)
         self.shop_manager = ShopManager(SHOP_FILE)
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] Cog Economia carregada.")
-        print(f"[Economia] Usando moeda: {CURRENCY_NAME} ({self.currency_emoji})")
-        self.active_shop_views = {} # interaction.message.id: ShopView instance
-        self.active_inventory_views = {}
+        self.daily_check.start()
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Cog Economia carregada.')
 
-    # --- Comandos Principais --- 
+    def cog_unload(self):
+        self.daily_check.cancel()
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Cog Economia descarregada.')
 
-    @nextcord.slash_command(name="saldo", description=f"Verifique seu saldo de {CURRENCY_NAME}.")
-    async def saldo(self, interaction: Interaction, usuario: Member | User = SlashOption(description="Ver o saldo de outro usuário (opcional)", required=False)):
+    async def send_error_embed(self, interaction: Interaction, title: str, description: str):
+        embed = Embed(title=f"{get_emoji(self.bot, 'error')} {title}", description=description, color=Color.red())
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def send_success_embed(self, interaction: Interaction, title: str, description: str):
+        embed = Embed(title=f"{get_emoji(self.bot, 'success')} {title}", description=description, color=Color.green())
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def send_info_embed(self, interaction: Interaction, title: str, description: str, fields: list = None):
+        embed = Embed(title=f"{get_emoji(self.bot, 'info')} {title}", description=description, color=Color.blue())
+        if fields:
+            for name, value, inline in fields:
+                embed.add_field(name=name, value=value, inline=inline)
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # --- Comandos de Economia ---
+    @nextcord.slash_command(name="saldo", description="Verifica seu saldo ou o de outro usuário.")
+    async def saldo(self, interaction: Interaction, usuario: Optional[Member] = SlashOption(description="Usuário para verificar o saldo (opcional).", required=False)):
         target_user = usuario or interaction.user
         balance = await self.economy_manager.get_balance(target_user.id)
-        embed = Embed(
-            title=f"{self.currency_emoji} Saldo de {target_user.display_name}",
-            description=f"Saldo atual: **{balance:,} {CURRENCY_SYMBOL}**",
-            color=target_user.color if isinstance(target_user, Member) else Color.blue()
-        )
-        if target_user.display_avatar:
-            embed.set_thumbnail(url=target_user.display_avatar.url)
-        await interaction.response.send_message(embed=embed)
+        emoji_money = get_emoji(self.bot, "money")
+        embed = Embed(title=f"{emoji_money} Saldo de {target_user.display_name}", 
+                        description=f"Você possui **{balance} {CURRENCY_SYMBOL}**.", 
+                        color=Color.gold())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @nextcord.slash_command(name="bolsa", description=f"Alias para /saldo. Verifica seu saldo de {CURRENCY_NAME}.")
-    async def bolsa_alias(self, interaction: Interaction, usuario: Member | User = SlashOption(description="Ver o saldo de outro usuário (opcional)", required=False)):
-        await self.saldo(interaction, usuario)
-
-    @nextcord.slash_command(name="diario", description=f"Resgate seus {CURRENCY_NAME} diários!")
-    async def diario(self, interaction: Interaction):
+    @nextcord.slash_command(name="daily", description=f"Colete seus {CURRENCY_NAME} diários!")
+    async def daily(self, interaction: Interaction):
         user_id = interaction.user.id
-        command_name = "daily"
-        cooldown_left = await self.economy_manager.check_cooldown(user_id, command_name)
-        if cooldown_left:
-            hours, remainder = divmod(cooldown_left, 3600)
-            minutes, _ = divmod(remainder, 60)
-            await interaction.response.send_message(
-                f"{get_emoji(self.bot, 'clock')} Você já resgatou seu prêmio diário! Tente novamente em **{int(hours)}h {int(minutes)}m**.",
-                ephemeral=True
-            )
+        cooldown_remaining = await self.economy_manager.check_cooldown(user_id, "daily")
+        emoji_clock = get_emoji(self.bot, "clock")
+        if cooldown_remaining:
+            await self.send_error_embed(interaction, "Cooldown Ativo", f"{emoji_clock} Você já coletou seu daily. Tente novamente em **{timedelta(seconds=cooldown_remaining)}**.")
             return
 
         amount = random.randint(DAILY_MIN, DAILY_MAX)
-        new_balance = await self.economy_manager.update_balance(user_id, amount, reason="daily")
-        await self.economy_manager.set_cooldown(user_id, command_name, DAILY_COOLDOWN)
-        await self.economy_manager.save_data()
-        embed = Embed(
-            title=f"{get_emoji(self.bot, 'gift')} Resgate Diário!",
-            description=f"{get_emoji(self.bot, 'sparkle_happy')} Você resgatou **{amount:,} {self.currency_emoji} {CURRENCY_SYMBOL}**!",
-            color=Color.gold()
-        )
-        embed.add_field(name="Novo Saldo", value=f"**{new_balance:,} {self.currency_emoji}**")
-        await interaction.response.send_message(embed=embed)
+        await self.economy_manager.update_balance(user_id, amount, reason="daily_collection")
+        await self.economy_manager.set_cooldown(user_id, "daily", DAILY_COOLDOWN)
+        emoji_gift = get_emoji(self.bot, "gift")
+        await self.send_success_embed(interaction, "Daily Coletado!", f"{emoji_gift} Você coletou **{amount} {CURRENCY_SYMBOL}**! Volte em 24 horas.")
 
     @nextcord.slash_command(name="trabalhar", description="Trabalhe para ganhar alguns Cristais Shirayuki.")
     async def trabalhar(self, interaction: Interaction):
         user_id = interaction.user.id
-        command_name = "work"
-        cooldown_left = await self.economy_manager.check_cooldown(user_id, command_name)
-        if cooldown_left:
-            hours, remainder = divmod(cooldown_left, 3600)
-            minutes, _ = divmod(remainder, 60)
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'clock')} Você precisa descansar mais um pouco! Tente novamente em **{int(hours)}h {int(minutes)}m**.", ephemeral=True)
+        cooldown_remaining = await self.economy_manager.check_cooldown(user_id, "work")
+        emoji_clock = get_emoji(self.bot, "clock")
+        if cooldown_remaining:
+            await self.send_error_embed(interaction, "Cooldown Ativo", f"{emoji_clock} Você já trabalhou recentemente. Tente novamente em **{timedelta(seconds=cooldown_remaining)}**.")
             return
 
         amount = random.randint(WORK_MIN, WORK_MAX)
-        new_balance = await self.economy_manager.update_balance(user_id, amount, reason="work")
-        await self.economy_manager.set_cooldown(user_id, command_name, WORK_COOLDOWN)
-        await self.economy_manager.save_data()
-        
-        trabalhos_sucesso = [
-            f"Você ajudou a organizar a biblioteca da mansão e ganhou {amount:,} {self.currency_emoji} {CURRENCY_SYMBOL}!",
-            f"Depois de um dia polindo os talheres de prata, você recebeu {amount:,} {self.currency_emoji} {CURRENCY_SYMBOL}.",
-            f"Sua jardinagem impecável rendeu {amount:,} {self.currency_emoji} {CURRENCY_SYMBOL}!",
-            f"Você passou o dia catalogando artefatos antigos e foi recompensado com {amount:,} {self.currency_emoji} {CURRENCY_SYMBOL}."
-        ]
-        embed = Embed(title=f"{get_emoji(self.bot, 'work')} Trabalho Concluído!", description=random.choice(trabalhos_sucesso), color=Color.green())
-        embed.add_field(name="Novo Saldo", value=f"**{new_balance:,} {self.currency_emoji}**")
-        await interaction.response.send_message(embed=embed)
+        await self.economy_manager.update_balance(user_id, amount, reason="work_payment")
+        await self.economy_manager.set_cooldown(user_id, "work", WORK_COOLDOWN)
+        emoji_work = get_emoji(self.bot, "work")
+        await self.send_success_embed(interaction, "Trabalho Concluído!", f"{emoji_work} Você trabalhou e ganhou **{amount} {CURRENCY_SYMBOL}**.")
 
-    @nextcord.slash_command(name="crime", description="Tente um pequeno crime para ganhar Cristais. Cuidado, pode dar errado!")
+    @nextcord.slash_command(name="crime", description="Tente um crime arriscado para ganhar (ou perder) Cristais.")
     async def crime(self, interaction: Interaction):
         user_id = interaction.user.id
-        command_name = "crime"
-        cooldown_left = await self.economy_manager.check_cooldown(user_id, command_name)
-        if cooldown_left:
-            minutes, seconds = divmod(cooldown_left, 60)
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'clock')} Você precisa esperar a poeira baixar! Tente novamente em **{int(minutes)}m {int(seconds)}s**.", ephemeral=True)
+        cooldown_remaining = await self.economy_manager.check_cooldown(user_id, "crime")
+        emoji_clock = get_emoji(self.bot, "clock")
+        if cooldown_remaining:
+            await self.send_error_embed(interaction, "Cooldown Ativo", f"{emoji_clock} Você já cometeu um crime recentemente. Tente novamente em **{timedelta(seconds=cooldown_remaining)}**.")
             return
 
-        await self.economy_manager.set_cooldown(user_id, command_name, CRIME_COOLDOWN)
+        await self.economy_manager.set_cooldown(user_id, "crime", CRIME_COOLDOWN)
+        emoji_crime = get_emoji(self.bot, "crime")
+        emoji_sad = get_emoji(self.bot, "sad")
+
         if random.random() < CRIME_SUCCESS_RATE:
             amount = random.randint(CRIME_SUCCESS_MIN, CRIME_SUCCESS_MAX)
-            new_balance = await self.economy_manager.update_balance(user_id, amount, reason="crime_success")
-            crimes_sucesso = [
-                f"Você furtou uma carteira recheada e conseguiu {amount:,} {self.currency_emoji} {CURRENCY_SYMBOL}!",
-                f"Sua lábia convenceu um nobre a te dar {amount:,} {self.currency_emoji} {CURRENCY_SYMBOL} por uma \"proteção\".",
-                f"Um pequeno desvio de mercadorias rendeu {amount:,} {self.currency_emoji} {CURRENCY_SYMBOL}."
-            ]
-            embed = Embed(title=f"{get_emoji(self.bot, 'crime')} Crime Bem-Sucedido!", description=random.choice(crimes_sucesso), color=Color.dark_orange())
+            await self.economy_manager.update_balance(user_id, amount, reason="crime_success")
+            await self.send_success_embed(interaction, "Crime Bem-Sucedido!", f"{emoji_crime} Você cometeu um crime e lucrou **{amount} {CURRENCY_SYMBOL}**!")
         else:
             fine = random.randint(CRIME_FAIL_FINE_MIN, CRIME_FAIL_FINE_MAX)
-            new_balance = await self.economy_manager.update_balance(user_id, -fine, reason="crime_fail_fine")
-            crimes_falha = [
-                f"Você foi pego tentando roubar e teve que pagar uma multa de {fine:,} {self.currency_emoji} {CURRENCY_SYMBOL}!",
-                f"Um guarda te viu e você largou tudo para trás, perdendo {fine:,} {self.currency_emoji} {CURRENCY_SYMBOL} no processo.",
-                f"Sua tentativa de enganar um comerciante falhou e você foi multado em {fine:,} {self.currency_emoji} {CURRENCY_SYMBOL}."
-            ]
-            embed = Embed(title=f"{get_emoji(self.bot, 'error')} Crime Falhou!", description=random.choice(crimes_falha), color=Color.red())
+            current_balance = await self.economy_manager.get_balance(user_id)
+            fine_taken = min(fine, current_balance) # Não pode perder mais do que tem
+            await self.economy_manager.update_balance(user_id, -fine_taken, reason="crime_fail_fine")
+            if fine_taken > 0:
+                await self.send_error_embed(interaction, "Crime Falhou!", f"{emoji_sad} Você foi pego e multado em **{fine_taken} {CURRENCY_SYMBOL}**.")
+            else:
+                await self.send_error_embed(interaction, "Crime Falhou!", f"{emoji_sad} Você foi pego, mas não tinha {CURRENCY_SYMBOL} para serem multados.")
+
+    @nextcord.slash_command(name="roubar", description="Tente roubar Cristais de outro usuário.")
+    async def roubar(self, interaction: Interaction, 
+                     vitima: Member = SlashOption(description="Usuário que você tentará roubar.", required=True)):
+        robber_id = interaction.user.id
+        victim_id = vitima.id
+
+        if robber_id == victim_id:
+            await self.send_error_embed(interaction, "Ação Inválida", "Você não pode roubar de si mesmo.")
+            return
         
-        embed.add_field(name="Saldo Atual", value=f"**{new_balance:,} {self.currency_emoji}**")
-        await self.economy_manager.save_data()
-        await interaction.response.send_message(embed=embed)
-
-    @nextcord.slash_command(name="roubar", description="Tente roubar Cristais de outro usuário. Arriscado!")
-    @application_checks.guild_only()
-    async def roubar(self, interaction: Interaction, vitima: Member = SlashOption(description="O membro que você tentará roubar.", required=True)):
-        user_id = interaction.user.id
-        target_id = vitima.id
-        command_name = "rob"
-
-        if user_id == target_id:
-            await interaction.response.send_message("Você não pode roubar a si mesmo!", ephemeral=True)
-            return
         if vitima.bot:
-            await interaction.response.send_message("Você não pode roubar um bot!", ephemeral=True)
+            await self.send_error_embed(interaction, "Ação Inválida", "Você não pode roubar de um bot.")
             return
 
-        cooldown_left = await self.economy_manager.check_cooldown(user_id, command_name)
-        if cooldown_left:
-            hours, remainder = divmod(cooldown_left, 3600)
-            minutes, _ = divmod(remainder, 60)
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'clock')} Você precisa planejar seu próximo golpe! Tente novamente em **{int(hours)}h {int(minutes)}m**.", ephemeral=True)
+        cooldown_remaining = await self.economy_manager.check_cooldown(robber_id, "rob")
+        emoji_clock = get_emoji(self.bot, "clock")
+        if cooldown_remaining:
+            await self.send_error_embed(interaction, "Cooldown Ativo", f"{emoji_clock} Você já tentou um roubo recentemente. Tente novamente em **{timedelta(seconds=cooldown_remaining)}**.")
             return
 
-        await self.economy_manager.set_cooldown(user_id, command_name, ROB_COOLDOWN)
-        target_balance = await self.economy_manager.get_balance(target_id)
-        user_balance = await self.economy_manager.get_balance(user_id)
-
-        if target_balance < WORK_MIN: # Não vale a pena roubar quem tem muito pouco
-            await interaction.response.send_message(f"{vitima.display_name} não tem {CURRENCY_NAME} suficientes para valer o risco.", ephemeral=True)
+        await self.economy_manager.set_cooldown(robber_id, "rob", ROB_COOLDOWN)
+        
+        victim_balance = await self.economy_manager.get_balance(victim_id)
+        if victim_balance < 100: # Mínimo para valer a pena roubar
+            await self.send_error_embed(interaction, "Alvo Pobre", f"{vitima.display_name} não tem {CURRENCY_SYMBOL} suficientes para serem roubados.")
             return
+
+        emoji_rob = get_emoji(self.bot, "rob")
+        emoji_sad = get_emoji(self.bot, "sad")
 
         if random.random() < ROB_SUCCESS_RATE:
-            amount_stolen = min(int(target_balance * ROB_MAX_PERCENTAGE), random.randint(WORK_MIN, WORK_MAX * 2)) # Limita o roubo
-            amount_stolen = max(amount_stolen, 1) # Garante que pelo menos 1 seja roubado se possível
+            max_stealable = int(victim_balance * ROB_MAX_PERCENTAGE)
+            amount_stolen = random.randint(1, max(1, max_stealable)) # Garante que roube pelo menos 1 se max_stealable for > 0
             
-            await self.economy_manager.update_balance(user_id, amount_stolen, reason="rob_success")
-            new_balance_user = await self.economy_manager.update_balance(target_id, -amount_stolen, reason="stolen")
-            
-            embed = Embed(title=f"{get_emoji(self.bot, 'rob')} Roubo Bem-Sucedido!", description=f"Você conseguiu roubar **{amount_stolen:,} {self.currency_emoji} {CURRENCY_SYMBOL}** de {vitima.mention}!", color=Color.dark_purple())
-            embed.add_field(name=f"Seu Saldo", value=f"**{(user_balance + amount_stolen):,} {self.currency_emoji}**")
-            embed.add_field(name=f"Saldo de {vitima.display_name}", value=f"**{new_balance_user:,} {self.currency_emoji}**")
+            await self.economy_manager.update_balance(robber_id, amount_stolen, reason="rob_success")
+            await self.economy_manager.update_balance(victim_id, -amount_stolen, reason="stolen")
+            await self.send_success_embed(interaction, "Roubo Bem-Sucedido!", f"{emoji_rob} Você roubou **{amount_stolen} {CURRENCY_SYMBOL}** de {vitima.mention}!")
         else:
-            fine_amount = min(int(user_balance * ROB_FAIL_FINE_PERCENTAGE), random.randint(CRIME_FAIL_FINE_MIN, CRIME_FAIL_FINE_MAX))
-            fine_amount = max(fine_amount, 1)
-            new_balance_user = await self.economy_manager.update_balance(user_id, -fine_amount, reason="rob_fail_fine")
-            embed = Embed(title=f"{get_emoji(self.bot, 'error')} Roubo Falhou!", description=f"Você foi pego tentando roubar {vitima.mention} e perdeu **{fine_amount:,} {self.currency_emoji} {CURRENCY_SYMBOL}**!", color=Color.red())
-            embed.add_field(name="Seu Saldo", value=f"**{new_balance_user:,} {self.currency_emoji}**")
-        
-        await self.economy_manager.save_data()
-        await interaction.response.send_message(embed=embed)
+            robber_balance = await self.economy_manager.get_balance(robber_id)
+            fine = int(robber_balance * ROB_FAIL_FINE_PERCENTAGE)
+            fine_taken = min(fine, robber_balance)
+            await self.economy_manager.update_balance(robber_id, -fine_taken, reason="rob_fail_fine")
+            if fine_taken > 0:
+                await self.send_error_embed(interaction, "Roubo Falhou!", f"{emoji_sad} Você foi pego tentando roubar {vitima.mention} e perdeu **{fine_taken} {CURRENCY_SYMBOL}**.")
+            else:
+                 await self.send_error_embed(interaction, "Roubo Falhou!", f"{emoji_sad} Você foi pego tentando roubar {vitima.mention}, mas não tinha {CURRENCY_SYMBOL} para serem multados.")
 
-    @nextcord.slash_command(name="apostar", description="Aposte seus Cristais em um jogo de sorte (50/50 chance).")
-    async def apostar(self, interaction: Interaction, quantia: int = SlashOption(description="A quantidade de Cristais para apostar.", required=True)):
+    @nextcord.slash_command(name="apostar", description="Aposte seus Cristais Shirayuki!")
+    async def apostar(self, interaction: Interaction, 
+                      valor: int = SlashOption(description="Quantidade de Cristais para apostar.", required=True)):
         user_id = interaction.user.id
-        command_name = "bet"
 
-        if quantia <= 0:
-            await interaction.response.send_message("Você precisa apostar uma quantia positiva!", ephemeral=True)
+        if valor <= 0:
+            await self.send_error_embed(interaction, "Valor Inválido", "Você deve apostar uma quantidade positiva de Cristais.")
             return
 
-        user_balance = await self.economy_manager.get_balance(user_id)
-        if quantia > user_balance:
-            await interaction.response.send_message(f"Você não tem {quantia:,} {CURRENCY_SYMBOL} para apostar. Seu saldo é {user_balance:,} {CURRENCY_SYMBOL}.", ephemeral=True)
+        current_balance = await self.economy_manager.get_balance(user_id)
+        if valor > current_balance:
+            await self.send_error_embed(interaction, "Saldo Insuficiente", f"Você não tem **{valor} {CURRENCY_SYMBOL}** para apostar. Seu saldo é **{current_balance} {CURRENCY_SYMBOL}**.")
             return
-
-        cooldown_left = await self.economy_manager.check_cooldown(user_id, command_name)
-        if cooldown_left:
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'clock')} Você precisa esperar um pouco antes de apostar de novo! Tente em **{cooldown_left}s**.", ephemeral=True)
-            return
-
-        await self.economy_manager.set_cooldown(user_id, command_name, BET_COOLDOWN)
         
-        # Simula o jogo (50/50)
-        ganhou = random.choice([True, False])
+        cooldown_remaining = await self.economy_manager.check_cooldown(user_id, "bet")
+        emoji_clock = get_emoji(self.bot, "clock")
+        if cooldown_remaining:
+            await self.send_error_embed(interaction, "Cooldown Ativo", f"{emoji_clock} Você já apostou recentemente. Tente novamente em **{timedelta(seconds=cooldown_remaining)}**.")
+            return
+        
+        await self.economy_manager.set_cooldown(user_id, "bet", BET_COOLDOWN)
 
-        if ganhou:
-            new_balance = await self.economy_manager.update_balance(user_id, quantia, reason="gamble_win") # Ganha a quantia apostada
-            embed = Embed(title=f"{get_emoji(self.bot, 'win')} Você Ganhou!", description=f"Parabéns! Você apostou {quantia:,} {self.currency_emoji} e ganhou!", color=Color.green())
+        # Simples jogo de 50/50
+        emoji_win = get_emoji(self.bot, "win")
+        emoji_lose = get_emoji(self.bot, "lose")
+        emoji_dice = get_emoji(self.bot, "dice")
+
+        await interaction.response.defer(ephemeral=True)
+        await asyncio.sleep(1) # Pequena pausa para suspense
+
+        if random.random() < 0.48: # Chance de ganhar um pouco menor que 50% para a "casa"
+            await self.economy_manager.update_balance(user_id, valor, reason="gamble_win")
+            await self.send_success_embed(interaction, f"{emoji_dice} Você Ganhou!", f"{emoji_win} Parabéns! Você apostou **{valor} {CURRENCY_SYMBOL}** e ganhou! Seu novo saldo é **{current_balance + valor} {CURRENCY_SYMBOL}**.")
         else:
-            new_balance = await self.economy_manager.update_balance(user_id, -quantia, reason="gamble_loss") # Perde a quantia apostada
-            embed = Embed(title=f"{get_emoji(self.bot, 'lose')} Você Perdeu!", description=f"Que pena! Você apostou {quantia:,} {self.currency_emoji} e perdeu.", color=Color.red())
+            await self.economy_manager.update_balance(user_id, -valor, reason="gamble_loss")
+            await self.send_error_embed(interaction, f"{emoji_dice} Você Perdeu!", f"{emoji_lose} Que pena! Você apostou **{valor} {CURRENCY_SYMBOL}** e perdeu. Seu novo saldo é **{current_balance - valor} {CURRENCY_SYMBOL}**.")
+
+    @nextcord.slash_command(name="loja", description="Mostra os itens disponíveis para compra.")
+    async def loja(self, interaction: Interaction, pagina: int = SlashOption(description="Número da página da loja.", required=False, default=1)):
+        all_items_dict = await self.shop_manager.get_all_items()
+        if not all_items_dict:
+            await self.send_info_embed(interaction, "Loja Vazia", "Ainda não há itens na loja.")
+            return
+
+        items_per_page = 5 # Máximo de 5 botões de item por linha na view, mais botões de navegação
+        item_ids = list(all_items_dict.keys())
+        total_items = len(item_ids)
+        total_pages = (total_items + items_per_page - 1) // items_per_page
+
+        if not 1 <= pagina <= total_pages and total_pages > 0:
+            await self.send_error_embed(interaction, "Página Inválida", f"Por favor, insira um número de página entre 1 e {total_pages}.")
+            return
         
-        embed.add_field(name="Seu Novo Saldo", value=f"**{new_balance:,} {self.currency_emoji}**")
-        await self.economy_manager.save_data()
-        await interaction.response.send_message(embed=embed)
-
-    @nextcord.slash_command(name="ranking", description="Mostra o ranking dos mais ricos do servidor.")
-    @application_checks.guild_only() # Faz sentido ser por servidor
-    async def ranking(self, interaction: Interaction):
-        await interaction.response.defer()
-        all_data = await self.economy_manager.get_all_data()
-        
-        # Filtra usuários do servidor atual e ordena por saldo
-        guild_members_ids = {str(member.id) for member in interaction.guild.members}
-        server_economy_data = []
-        for user_id_str, data in all_data.items():
-            if user_id_str in guild_members_ids:
-                try:
-                    member = interaction.guild.get_member(int(user_id_str)) # Tenta obter o membro para nome
-                    if member: # Garante que o membro ainda está no servidor
-                        server_economy_data.append({"id": int(user_id_str), "name": member.display_name, "balance": data.get("balance", 0)})
-                except ValueError:
-                    pass # ID inválido, ignora
-
-        sorted_users = sorted(server_economy_data, key=lambda x: x["balance"], reverse=True)
-
-        embed = Embed(title=f"{get_emoji(self.bot, 'trophy')} Ranking de Riqueza - {interaction.guild.name}", color=Color.gold())
-        if not sorted_users:
-            embed.description = "Ninguém tem {CURRENCY_NAME} neste servidor ainda!"
-        else:
-            description_lines = []
-            for i, user_data in enumerate(sorted_users[:10]): # Top 10
-                rank_emoji = ""
-                if i == 0: rank_emoji = "🥇 "
-                elif i == 1: rank_emoji = "🥈 "
-                elif i == 2: rank_emoji = "🥉 "
-                else: rank_emoji = f"**{i+1}.** "
-                description_lines.append(f"{rank_emoji}{user_data['name']}: **{user_data['balance']:,} {CURRENCY_SYMBOL}**")
-            embed.description = "\n".join(description_lines)
-        
-        await interaction.followup.send(embed=embed)
-
-    # --- Comandos da Loja e Inventário ---
-    async def _generate_shop_embed_and_view(self, interaction: Interaction, page: int = 1):
-        all_items = await self.shop_manager.get_all_items()
-        if not all_items:
-            await interaction.response.send_message("A loja está vazia no momento!", ephemeral=True)
-            return None, None
-
-        items_per_page = 5 # Número de itens por página na loja (para botões)
-        item_ids = list(all_items.keys())
-        total_pages = (len(item_ids) + items_per_page - 1) // items_per_page
-        page = max(1, min(page, total_pages))
-
-        start_index = (page - 1) * items_per_page
+        start_index = (pagina - 1) * items_per_page
         end_index = start_index + items_per_page
-        items_on_page_ids = item_ids[start_index:end_index]
+        current_item_ids_on_page = item_ids[start_index:end_index]
         
-        items_on_page_data = [(item_id, all_items[item_id]) for item_id in items_on_page_ids]
+        items_on_page_data = [] # Lista de (item_id, item_data)
+        description_parts = []
+        for item_id in current_item_ids_on_page:
+            item_data = all_items_dict[item_id]
+            items_on_page_data.append((item_id, item_data))
+            emoji = item_data.get("emoji", "📦")
+            description_parts.append(f"{emoji} **{item_data['name']}** - {item_data['price']} {CURRENCY_SYMBOL}\n*ID: `{item_id}`* | {item_data['description']}")
+        
+        embed_description = "\n\n".join(description_parts) if description_parts else "Nenhum item nesta página."
 
-        embed = Embed(title=f"{get_emoji(self.bot, 'shop')} Loja da Shirayuki - Página {page}/{total_pages}", color=Color.dark_theme())
-        if not items_on_page_data:
-            embed.description = "Nenhum item nesta página."
+        embed = Embed(title=f"{get_emoji(self.bot, 'shop')} Loja de Itens - Página {pagina}/{total_pages}", 
+                        description=embed_description, 
+                        color=Color.purple())
+        embed.set_footer(text=f"Use /comprar <id_do_item> para adquirir um item.")
+
+        view = ShopView(self.bot, self.shop_manager, self.economy_manager, pagina, total_pages, items_on_page_data)
+        
+        if interaction.response.is_done():
+            # Se a interação já foi respondida (ex: por um botão da view anterior)
+            await interaction.edit_original_message(embed=embed, view=view)
         else:
-            desc_lines = []
-            for item_id, item in items_on_page_data:
-                desc_lines.append(f"{item.get('emoji', '📦')} **{item['name']}** - {item['price']:,} {CURRENCY_SYMBOL}\n*ID: `{item_id}` | {item['description']}*")
-            embed.description = "\n\n".join(desc_lines)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @nextcord.slash_command(name="comprar", description="Compra um item da loja.")
+    async def comprar(self, interaction: Interaction, 
+                      item_id: str = SlashOption(description="ID do item que você quer comprar.", required=True), 
+                      quantidade: int = SlashOption(description="Quantidade a comprar (padrão 1).", required=False, default=1)):
+        item_id = item_id.lower()
+        if quantidade <= 0:
+            await self.send_error_embed(interaction, "Quantidade Inválida", "A quantidade deve ser maior que zero.")
+            return
+
+        item_data = await self.shop_manager.get_item(item_id)
+        if not item_data:
+            await self.send_error_embed(interaction, "Item Não Encontrado", f"O item com ID `{item_id}` não existe na loja.")
+            return
+
+        total_cost = item_data["price"] * quantidade
+        user_balance = await self.economy_manager.get_balance(interaction.user.id)
+
+        if user_balance < total_cost:
+            await self.send_error_embed(interaction, "Saldo Insuficiente", 
+                                      f"Você precisa de **{total_cost} {CURRENCY_SYMBOL}** para comprar {quantidade}x '{item_data['name']}', mas você só tem **{user_balance} {CURRENCY_SYMBOL}**.")
+            return
+
+        await self.economy_manager.update_balance(interaction.user.id, -total_cost, reason="item_purchase")
+        await self.economy_manager.add_item_to_inventory(interaction.user.id, item_id, item_data["name"], quantidade)
         
-        view = ShopView(self.bot, self.shop_manager, self.economy_manager, page, total_pages, items_on_page_data)
-        return embed, view
+        emoji_buy = get_emoji(self.bot, "buy")
+        await self.send_success_embed(interaction, "Compra Realizada!", 
+                                    f"{emoji_buy} Você comprou {quantidade}x **{item_data['name']}** por **{total_cost} {CURRENCY_SYMBOL}**.")
 
-    @nextcord.slash_command(name="loja", description="Veja os itens disponíveis para compra.")
-    async def loja(self, interaction: Interaction, pagina: int = SlashOption(description="Número da página da loja", required=False, default=1)):
-        embed, view = await self._generate_shop_embed_and_view(interaction, page=pagina)
-        if embed and view:
-            # Remove a view antiga se houver uma para esta interação/mensagem
-            if interaction.message and interaction.message.id in self.active_shop_views:
-                old_view = self.active_shop_views.pop(interaction.message.id)
-                # Não precisa desabilitar botões aqui, pois a mensagem será editada com nova view
-            
-            if interaction.response.is_done():
-                msg = await interaction.followup.send(embed=embed, view=view)
-            else:
-                await interaction.response.send_message(embed=embed, view=view)
-                msg = await interaction.original_message() # Pega a mensagem enviada
-            
-            if msg: # Adiciona a nova view ativa
-                 self.active_shop_views[msg.id] = view
-        elif embed is None and view is None: # Loja vazia, já foi respondido
-            pass
-        else: # Algum erro inesperado
-            if not interaction.response.is_done():
-                 await interaction.response.send_message("Erro ao carregar a loja.", ephemeral=True)
+    @nextcord.slash_command(name="inventario", description="Mostra os itens que você possui.")
+    async def inventario(self, interaction: Interaction, pagina: int = SlashOption(description="Número da página do inventário.", required=False, default=1)):
+        user_id = interaction.user.id
+        inventory_list = await self.economy_manager.get_inventory(user_id)
 
-    @commands.Cog.listener("on_interaction")
-    async def on_shop_interaction(self, interaction: Interaction):
-        if not interaction.message or not interaction.data or not interaction.data.get("custom_id"):
+        if not inventory_list:
+            await self.send_info_embed(interaction, "Inventário Vazio", "Você não possui nenhum item.")
             return
 
-        custom_id = interaction.data["custom_id"]
+        items_per_page = 5 # Similar à loja, para botões de "usar"
+        total_items = len(inventory_list)
+        total_pages = (total_items + items_per_page - 1) // items_per_page
+
+        if not 1 <= pagina <= total_pages and total_pages > 0:
+            await self.send_error_embed(interaction, "Página Inválida", f"Por favor, insira um número de página entre 1 e {total_pages}.")
+            return
         
-        # Lógica de Paginação da Loja
-        if custom_id in ["shop_prev_page", "shop_next_page"]:
-            if interaction.message.id not in self.active_shop_views:
-                await interaction.response.send_message("Esta loja expirou ou não é mais válida.", ephemeral=True)
-                return
-            
-            active_view: ShopView = self.active_shop_views[interaction.message.id]
-            current_page = active_view.current_page
-            new_page = current_page - 1 if custom_id == "shop_prev_page" else current_page + 1
-
-            embed, new_view = await self._generate_shop_embed_and_view(interaction, page=new_page)
-            if embed and new_view:
-                # Desabilita botões da view antiga e remove da lista ativa
-                for item_btn in active_view.children:
-                    if isinstance(item_btn, ui.Button): item_btn.disabled = True
-                await interaction.message.edit(view=active_view) # Salva a desabilitação
-                del self.active_shop_views[interaction.message.id]
-
-                await interaction.response.edit_message(embed=embed, view=new_view)
-                self.active_shop_views[interaction.message.id] = new_view # Adiciona a nova view
-            else:
-                await interaction.response.send_message("Não foi possível carregar a página da loja.", ephemeral=True)
-            return
-
-        # Lógica de Compra de Itens
-        if custom_id.startswith("buy_"):
-            if interaction.message.id not in self.active_shop_views:
-                await interaction.response.send_message("Esta loja expirou ou não é mais válida.", ephemeral=True)
-                return
-
-            item_id_to_buy = custom_id.split("_", 1)[1]
-            item_data = await self.shop_manager.get_item(item_id_to_buy)
-
-            if not item_data:
-                await interaction.response.send_message("Este item não está mais disponível.", ephemeral=True)
-                return
-
-            user_balance = await self.economy_manager.get_balance(interaction.user.id)
-            if user_balance < item_data["price"]:
-                await interaction.response.send_message(f"Você não tem {CURRENCY_SYMBOL} suficientes! Você precisa de {item_data['price']:,}, mas tem {user_balance:,}.", ephemeral=True)
-                return
-
-            # Processa a compra
-            await self.economy_manager.update_balance(interaction.user.id, -item_data["price"], reason="shop_purchase")
-            await self.economy_manager.add_item_to_inventory(interaction.user.id, item_id_to_buy, item_data["name"])
-            await self.economy_manager.save_data() # Garante que tudo seja salvo
-
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'buy')} Você comprou **{item_data['name']}** por {item_data['price']:,} {CURRENCY_SYMBOL}!", ephemeral=True)
-            
-            # Opcional: Atualizar a view da loja se a quantidade de itens mudar ou algo assim (não implementado aqui)
-            return
-
-    async def _generate_inventory_embed_and_view(self, interaction: Interaction, target_user: User | Member, page: int = 1):
-        user_inventory = await self.economy_manager.get_inventory(target_user.id)
-        if not user_inventory:
-            embed = Embed(title=f"{get_emoji(self.bot, 'inventory')} Inventário de {target_user.display_name}", description="Seu inventário está vazio.", color=target_user.color if isinstance(target_user, Member) else Color.default())
-            return embed, None
-
-        items_per_page = 5 # Itens por página para botões de "usar"
-        total_pages = (len(user_inventory) + items_per_page - 1) // items_per_page
-        page = max(1, min(page, total_pages))
-
-        start_index = (page - 1) * items_per_page
+        start_index = (pagina - 1) * items_per_page
         end_index = start_index + items_per_page
-        items_on_page_inv_data = user_inventory[start_index:end_index]
-        
-        # Pega dados da loja para os itens no inventário (nome, emoji, usabilidade)
-        items_on_page_full_data = []
-        for inv_item in items_on_page_inv_data:
-            shop_item_data = await self.shop_manager.get_item(inv_item["id"])
-            items_on_page_full_data.append((inv_item["id"], inv_item, shop_item_data))
+        current_items_on_page_inv = inventory_list[start_index:end_index]
 
-        embed = Embed(title=f"{get_emoji(self.bot, 'inventory')} Inventário de {target_user.display_name} - Página {page}/{total_pages}", color=target_user.color if isinstance(target_user, Member) else Color.default())
-        desc_lines = []
-        for item_id, inv_item, shop_item in items_on_page_full_data:
-            emoji = shop_item.get("emoji", "📦") if shop_item else "📦"
-            name = shop_item.get("name", inv_item["id"]) if shop_item else inv_item["id"] # Usa nome da loja se disponível
-            desc_lines.append(f"{emoji} **{name}** (ID: `{inv_item['id']}`) - Quantidade: {inv_item['quantity']}")
-        embed.description = "\n".join(desc_lines) if desc_lines else "Nenhum item nesta página."
-        
-        view = InventoryView(self.bot, self.economy_manager, self.shop_manager, target_user.id, page, total_pages, items_on_page_full_data)
-        return embed, view
+        items_on_page_data_for_view = [] # (item_id, inv_item_data, shop_item_data)
+        description_parts = []
+        for inv_item in current_items_on_page_inv:
+            item_id = inv_item["id"]
+            shop_item_data = await self.shop_manager.get_item(item_id) # Pega dados da loja para emoji e usabilidade
+            items_on_page_data_for_view.append((item_id, inv_item, shop_item_data))
+            
+            emoji = shop_item_data.get("emoji", "🎒") if shop_item_data else "🎒"
+            item_name = inv_item.get("name", item_id) # Usa nome do inventário, fallback para ID
+            description_parts.append(f"{emoji} **{item_name}** (ID: `{item_id}`) - Quantidade: {inv_item['quantity']}")
 
-    @nextcord.slash_command(name="inventario", description="Mostra seu inventário de itens.")
-    async def inventario(self, interaction: Interaction, pagina: int = SlashOption(description="Número da página do inventário", required=False, default=1)):
-        embed, view = await self._generate_inventory_embed_and_view(interaction, interaction.user, page=pagina)
+        embed_description = "\n".join(description_parts) if description_parts else "Nenhum item nesta página."
+
+        embed = Embed(title=f"{get_emoji(self.bot, 'inventory')} Inventário de {interaction.user.display_name} - Página {pagina}/{total_pages}", 
+                        description=embed_description, 
+                        color=Color.orange())
+        embed.set_footer(text="Itens usáveis podem ter um botão para /usar.")
         
-        if interaction.message and interaction.message.id in self.active_inventory_views:
-            old_view = self.active_inventory_views.pop(interaction.message.id)
+        view = InventoryView(self.bot, self.economy_manager, self.shop_manager, user_id, pagina, total_pages, items_on_page_data_for_view)
 
         if interaction.response.is_done():
-            msg = await interaction.followup.send(embed=embed, view=view)
+            await interaction.edit_original_message(embed=embed, view=view)
         else:
-            await interaction.response.send_message(embed=embed, view=view)
-            msg = await interaction.original_message()
-        
-        if msg and view: # Adiciona a nova view ativa se ela existir (não é None)
-            self.active_inventory_views[msg.id] = view
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @commands.Cog.listener("on_interaction")
-    async def on_inventory_interaction(self, interaction: Interaction):
-        if not interaction.message or not interaction.data or not interaction.data.get("custom_id"):
+    @nextcord.slash_command(name="usar", description="Usa um item do seu inventário.")
+    async def usar(self, interaction: Interaction, item_id: str = SlashOption(description="ID do item que você quer usar.", required=True)):
+        item_id = item_id.lower()
+        user_id = interaction.user.id
+
+        item_in_inventory_quantity = await self.economy_manager.get_item_quantity(user_id, item_id)
+        if item_in_inventory_quantity <= 0:
+            await self.send_error_embed(interaction, "Item Não Encontrado", f"Você não possui o item com ID `{item_id}` no seu inventário.")
             return
 
-        custom_id = interaction.data["custom_id"]
-
-        # Lógica de Paginação do Inventário
-        if custom_id in ["inv_prev_page", "inv_next_page"]:
-            if interaction.message.id not in self.active_inventory_views:
-                await interaction.response.send_message("Este inventário expirou ou não é mais válido.", ephemeral=True)
-                return
-            
-            active_view: InventoryView = self.active_inventory_views[interaction.message.id]
-            current_page = active_view.current_page
-            new_page = current_page - 1 if custom_id == "inv_prev_page" else current_page + 1
-
-            # Precisamos do target_user para gerar o novo embed/view
-            # Assumindo que o interaction.user é o dono do inventário para esta view
-            embed, new_view = await self._generate_inventory_embed_and_view(interaction, interaction.user, page=new_page)
-            if embed and new_view:
-                for item_btn in active_view.children:
-                    if isinstance(item_btn, ui.Button): item_btn.disabled = True
-                await interaction.message.edit(view=active_view)
-                del self.active_inventory_views[interaction.message.id]
-
-                await interaction.response.edit_message(embed=embed, view=new_view)
-                self.active_inventory_views[interaction.message.id] = new_view
-            else:
-                await interaction.response.send_message("Não foi possível carregar a página do inventário.", ephemeral=True)
+        shop_item_data = await self.shop_manager.get_item(item_id)
+        if not shop_item_data or not shop_item_data.get("usable"):
+            await self.send_error_embed(interaction, "Item Não Usável", f"O item '{shop_item_data.get('name', item_id) if shop_item_data else item_id}' não pode ser usado.")
             return
 
-        # Lógica de Uso de Itens
-        if custom_id.startswith("use_"):
-            if interaction.message.id not in self.active_inventory_views:
-                await interaction.response.send_message("Este inventário expirou ou não é mais válido.", ephemeral=True)
-                return
+        # Lógica de uso do item
+        # Exemplo: Dar um cargo se role_id estiver definido
+        role_id_to_give = shop_item_data.get("role_id")
+        success_message = shop_item_data.get("use_description", f"Você usou **{shop_item_data['name']}** com sucesso!")
+        action_taken = False
 
-            item_id_to_use = custom_id.split("_", 1)[1]
-            shop_item_data = await self.shop_manager.get_item(item_id_to_use)
-
-            if not shop_item_data or not shop_item_data.get("usable"):
-                await interaction.response.send_message("Este item não pode ser usado ou não existe mais.", ephemeral=True)
-                return
-
-            has_item = await self.economy_manager.get_item_quantity(interaction.user.id, item_id_to_use) > 0
-            if not has_item:
-                await interaction.response.send_message("Você não possui este item para usar.", ephemeral=True)
-                return
-
-            # Processa o uso do item
-            # Exemplo: dar um cargo se role_id estiver definido
-            success_msg = f"{get_emoji(self.bot, 'use')} Você usou **{shop_item_data['name']}**!"
-            if shop_item_data.get("use_description"):
-                success_msg += f"\n{shop_item_data['use_description']}"
-            
-            action_taken = False
-            if shop_item_data.get("role_id") and interaction.guild:
-                try:
-                    role_to_give = interaction.guild.get_role(shop_item_data["role_id"])
-                    if role_to_give and isinstance(interaction.user, Member):
-                        if role_to_give in interaction.user.roles:
-                            success_msg = f"Você já possui o cargo {role_to_give.mention} fornecido por este item."
-                        else:
-                            await interaction.user.add_roles(role_to_give, reason=f"Uso do item {shop_item_data['name']}")
-                            success_msg += f"\nVocê recebeu o cargo {role_to_give.mention}!"
+        if role_id_to_give:
+            try:
+                role_id_int = int(role_id_to_give)
+                role = interaction.guild.get_role(role_id_int)
+                if role and isinstance(interaction.user, Member):
+                    if role not in interaction.user.roles:
+                        await interaction.user.add_roles(role, reason=f"Usou o item {item_id} da loja.")
+                        success_message += f" Você recebeu o cargo {role.mention}!"
                         action_taken = True
                     else:
-                        success_msg = "Não foi possível encontrar o cargo associado a este item no servidor."
-                except nextcord.Forbidden:
-                    success_msg = "Não tenho permissão para dar cargos neste servidor."
-                except Exception as e:
-                    success_msg = f"Erro ao tentar dar o cargo: {e}"
-                    print(f"[ERRO USO ITEM] {e}")
-            
-            # Remove o item do inventário se uma ação foi tomada ou se não é um item de cargo
-            # (Pode-se adicionar lógica para itens consumíveis vs. permanentes aqui)
-            if action_taken or not shop_item_data.get("role_id"):
-                 await self.economy_manager.remove_item_from_inventory(interaction.user.id, item_id_to_use)
-                 await self.economy_manager.save_data()
+                        success_message += " Você já possui o cargo associado."
+                        action_taken = True # Considera ação tomada mesmo que já tenha o cargo
+                elif not role:
+                    await self.send_error_embed(interaction, "Erro ao Usar Item", f"O cargo associado ao item (ID: {role_id_int}) não foi encontrado no servidor.")
+                    return # Não consome o item se o cargo não existe
+            except ValueError:
+                 await self.send_error_embed(interaction, "Erro de Configuração do Item", f"O ID do cargo ({role_id_to_give}) para o item {item_id} não é um número válido.")
+                 return
+            except nextcord.Forbidden:
+                await self.send_error_embed(interaction, "Permissão Negada", f"Não tenho permissão para dar o cargo {role.name if role else 'desconhecido'}. Verifique minhas permissões.")
+                return
+            except Exception as e:
+                print(f"Erro ao dar cargo pelo item {item_id}: {e}")
+                await self.send_error_embed(interaction, "Erro Inesperado", f"Ocorreu um erro ao tentar dar o cargo. Tente novamente mais tarde.")
+                return
+        else:
+            # Se não há role_id, mas o item é usável, apenas envia a mensagem de sucesso padrão
+            action_taken = True 
 
-            await interaction.response.send_message(success_msg, ephemeral=True)
-            
-            # Atualiza a view do inventário
-            active_view: InventoryView = self.active_inventory_views[interaction.message.id]
-            embed, new_view = await self._generate_inventory_embed_and_view(interaction, interaction.user, page=active_view.current_page)
-            if embed:
-                for item_btn in active_view.children:
-                    if isinstance(item_btn, ui.Button): item_btn.disabled = True
-                await interaction.message.edit(view=active_view)
-                del self.active_inventory_views[interaction.message.id]
-                
-                # Envia a nova mensagem de inventário (não edita a interação original do botão)
-                # Isso é um pouco complicado porque a interação original do botão já foi respondida.
-                # Idealmente, a mensagem original do /inventario seria editada.
-                # Por simplicidade, vamos apenas assumir que o usuário pode rodar /inventario novamente.
-                # Ou, se a interação original do /inventario ainda for válida:
-                try:
-                    original_inv_message = await interaction.channel.fetch_message(interaction.message.id)
-                    await original_inv_message.edit(embed=embed, view=new_view)
-                    if new_view: self.active_inventory_views[interaction.message.id] = new_view
-                except (nextcord.NotFound, nextcord.HTTPException):
-                     pass # Não foi possível editar a mensagem original
+        if action_taken:
+            removed = await self.economy_manager.remove_item_from_inventory(user_id, item_id, 1)
+            if removed:
+                emoji_use = get_emoji(self.bot, "use")
+                await self.send_success_embed(interaction, "Item Usado!", f"{emoji_use} {success_message}")
+            else:
+                # Isso não deveria acontecer se a verificação de quantidade foi feita antes
+                await self.send_error_embed(interaction, "Erro ao Usar", "Não foi possível remover o item do seu inventário após o uso.")
+        else:
+            # Se nenhuma ação específica foi tomada (ex: item usável sem role_id e sem use_description customizada)
+            # e não houve erro, mas também não houve uma "ação" clara além de consumir.
+            # Poderia ser um item que só tem um efeito passivo ou é consumido sem feedback explícito além da remoção.
+            # Neste caso, se o item foi configurado como usável mas não tem role_id nem use_description, 
+            # ainda assim removemos e damos uma mensagem genérica.
+            removed = await self.economy_manager.remove_item_from_inventory(user_id, item_id, 1)
+            if removed:
+                 await self.send_success_embed(interaction, "Item Consumido", f"Você consumiu **{shop_item_data['name']}**.")
+            else:
+                await self.send_error_embed(interaction, "Erro ao Consumir", "Não foi possível remover o item do seu inventário.")
+
+    @nextcord.slash_command(name="ranking", description="Mostra o ranking dos mais ricos do servidor.")
+    async def ranking(self, interaction: Interaction, top_n: int = SlashOption(description="Número de usuários no topo (padrão 10).", required=False, default=10)):
+        if top_n <= 0 or top_n > 25:
+            await self.send_error_embed(interaction, "Valor Inválido", "O número de usuários no ranking deve ser entre 1 e 25.")
             return
+
+        all_data = await self.economy_manager.get_all_data()
+        if not all_data:
+            await self.send_info_embed(interaction, "Ranking Vazio", "Ainda não há dados de economia para mostrar um ranking.")
+            return
+
+        # Filtrar apenas usuários do servidor atual e que não sejam bots
+        guild_members_data = []
+        for user_id_str, data in all_data.items():
+            try:
+                user_id_int = int(user_id_str)
+                member = interaction.guild.get_member(user_id_int)
+                if member and not member.bot:
+                    guild_members_data.append((member.display_name, data.get("balance", 0)))
+            except ValueError:
+                continue # Ignora IDs não numéricos
+        
+        if not guild_members_data:
+            await self.send_info_embed(interaction, "Ranking Vazio", "Nenhum usuário deste servidor com dados de economia encontrado.")
+            return
+
+        sorted_users = sorted(guild_members_data, key=lambda x: x[1], reverse=True)
+        top_users = sorted_users[:top_n]
+
+        embed = Embed(title=f"{get_emoji(self.bot, 'trophy')} Ranking de Riqueza - Top {len(top_users)}", color=Color.gold())
+        description = ""
+        for i, (name, balance) in enumerate(top_users):
+            description += f"**{i+1}.** {name} - {balance} {CURRENCY_SYMBOL}\n"
+        
+        if not description:
+            description = "Ninguém no ranking ainda."
+            
+        embed.description = description
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # --- Comandos de Administração de Economia ---
-    @nextcord.slash_command(name="econadmin", description="Comandos de administração da economia.")
-    async def econadmin(self, interaction: Interaction):
+    @nextcord.slash_command(name="eco_admin", description="Comandos de administração da economia.")
+    async def eco_admin(self, interaction: Interaction):
         pass # Este é um grupo de subcomandos
 
-    @econadmin.subcommand(name="setbal", description="Define o saldo de um usuário.")
-    @application_checks.has_role(ADMIN_ROLE_ID) # Ou use has_permissions
-    async def econadmin_setbal(self, interaction: Interaction, 
-                               usuario: Member = SlashOption(description="O usuário para modificar o saldo.", required=True),
-                               quantia: int = SlashOption(description="A nova quantia de Cristais Shirayuki.", required=True)):
-        if quantia < 0:
-            await interaction.response.send_message("O saldo não pode ser negativo.", ephemeral=True)
+    @eco_admin.subcommand(name="dar", description="Dá Cristais para um usuário.")
+    @application_checks.has_permissions(administrator=True) # Ou uma role específica
+    async def eco_admin_dar(self, interaction: Interaction, 
+                            usuario: Member = SlashOption(description="Usuário para dar os Cristais.", required=True), 
+                            valor: int = SlashOption(description="Quantidade de Cristais a dar.", required=True)):
+        if valor <= 0:
+            await self.send_error_embed(interaction, "Valor Inválido", "A quantidade deve ser positiva.")
             return
         
-        # Para definir, precisamos calcular a diferença do saldo atual
+        await self.economy_manager.update_balance(usuario.id, valor, reason="admin_give")
+        await self.send_success_embed(interaction, "Cristais Adicionados", f"**{valor} {CURRENCY_SYMBOL}** foram adicionados à conta de {usuario.mention}.")
+
+    @eco_admin.subcommand(name="remover", description="Remove Cristais de um usuário.")
+    @application_checks.has_permissions(administrator=True)
+    async def eco_admin_remover(self, interaction: Interaction, 
+                                usuario: Member = SlashOption(description="Usuário para remover os Cristais.", required=True), 
+                                valor: int = SlashOption(description="Quantidade de Cristais a remover.", required=True)):
+        if valor <= 0:
+            await self.send_error_embed(interaction, "Valor Inválido", "A quantidade deve ser positiva.")
+            return
+        
         current_balance = await self.economy_manager.get_balance(usuario.id)
-        amount_to_change = quantia - current_balance
+        amount_to_remove = min(valor, current_balance) # Não pode remover mais do que tem
+
+        await self.economy_manager.update_balance(usuario.id, -amount_to_remove, reason="admin_remove")
+        await self.send_success_embed(interaction, "Cristais Removidos", f"**{amount_to_remove} {CURRENCY_SYMBOL}** foram removidos da conta de {usuario.mention}.")
+
+    @eco_admin.subcommand(name="definir", description="Define o saldo de Cristais de um usuário.")
+    @application_checks.has_permissions(administrator=True)
+    async def eco_admin_definir(self, interaction: Interaction, 
+                                usuario: Member = SlashOption(description="Usuário para definir o saldo.", required=True), 
+                                valor: int = SlashOption(description="Novo saldo de Cristais.", required=True)):
+        if valor < 0:
+            await self.send_error_embed(interaction, "Valor Inválido", "O saldo não pode ser negativo.")
+            return
         
-        new_balance = await self.economy_manager.update_balance(usuario.id, amount_to_change, reason="admin_set")
-        await self.economy_manager.save_data()
-        await interaction.response.send_message(f"{get_emoji(self.bot, 'admin')} O saldo de {usuario.mention} foi definido para **{new_balance:,} {CURRENCY_SYMBOL}**.", ephemeral=True)
+        current_balance = await self.economy_manager.get_balance(usuario.id)
+        change_amount = valor - current_balance
+        await self.economy_manager.update_balance(usuario.id, change_amount, reason="admin_set")
+        await self.send_success_embed(interaction, "Saldo Definido", f"O saldo de {usuario.mention} foi definido para **{valor} {CURRENCY_SYMBOL}**.")
 
-    @econadmin.subcommand(name="addbal", description="Adiciona Cristais ao saldo de um usuário.")
-    @application_checks.has_role(ADMIN_ROLE_ID)
-    async def econadmin_addbal(self, interaction: Interaction, 
-                              usuario: Member = SlashOption(description="O usuário para adicionar saldo.", required=True),
-                              quantia: int = SlashOption(description="A quantia de Cristais para adicionar.", required=True)):
-        if quantia <= 0:
-            await interaction.response.send_message("A quantia para adicionar deve ser positiva.", ephemeral=True)
-            return
-        new_balance = await self.economy_manager.update_balance(usuario.id, quantia, reason="admin_add")
-        await self.economy_manager.save_data()
-        await interaction.response.send_message(f"{get_emoji(self.bot, 'admin')} **{quantia:,} {CURRENCY_SYMBOL}** adicionados ao saldo de {usuario.mention}. Novo saldo: **{new_balance:,} {CURRENCY_SYMBOL}**.", ephemeral=True)
-
-    @econadmin.subcommand(name="rembal", description="Remove Cristais do saldo de um usuário.")
-    @application_checks.has_role(ADMIN_ROLE_ID)
-    async def econadmin_rembal(self, interaction: Interaction, 
-                              usuario: Member = SlashOption(description="O usuário para remover saldo.", required=True),
-                              quantia: int = SlashOption(description="A quantia de Cristais para remover.", required=True)):
-        if quantia <= 0:
-            await interaction.response.send_message("A quantia para remover deve ser positiva.", ephemeral=True)
-            return
-        new_balance = await self.economy_manager.update_balance(usuario.id, -quantia, reason="admin_remove")
-        await self.economy_manager.save_data()
-        await interaction.response.send_message(f"{get_emoji(self.bot, 'admin')} **{quantia:,} {CURRENCY_SYMBOL}** removidos do saldo de {usuario.mention}. Novo saldo: **{new_balance:,} {CURRENCY_SYMBOL}**.", ephemeral=True)
-
-    @econadmin.subcommand(name="resetuser", description="Reseta todos os dados de economia de um usuário.")
-    @application_checks.has_role(ADMIN_ROLE_ID)
-    async def econadmin_resetuser(self, interaction: Interaction, usuario: Member = SlashOption(description="O usuário para resetar.", required=True)):
+    @eco_admin.subcommand(name="resetar_usuario", description="Reseta todos os dados de economia de um usuário.")
+    @application_checks.has_permissions(administrator=True)
+    async def eco_admin_resetar_usuario(self, interaction: Interaction, 
+                                        usuario: Member = SlashOption(description="Usuário para resetar os dados.", required=True)):
         user_id_str = str(usuario.id)
         async with self.economy_manager.lock:
             if user_id_str in self.economy_manager.data:
                 del self.economy_manager.data[user_id_str]
                 await self.economy_manager.save_data()
-                await interaction.response.send_message(f"{get_emoji(self.bot, 'admin')} Os dados de economia de {usuario.mention} foram resetados.", ephemeral=True)
+                await self.send_success_embed(interaction, "Dados Resetados", f"Todos os dados de economia de {usuario.mention} foram resetados.")
             else:
-                await interaction.response.send_message(f"{usuario.mention} não possui dados de economia para resetar.", ephemeral=True)
+                await self.send_error_embed(interaction, "Usuário Não Encontrado", f"{usuario.mention} não possui dados de economia para resetar.")
 
-    @econadmin.subcommand(name="addshopitem", description="Adiciona um novo item à loja.")
-    @application_checks.has_role(ADMIN_ROLE_ID)
-    async def econadmin_addshopitem(self, interaction: Interaction,
-                                    item_id: str = SlashOption(description="ID único para o item (ex: 'espada_curta')", required=True),
+    @eco_admin.subcommand(name="resetar_cooldown", description="Reseta um cooldown específico para um usuário.")
+    @application_checks.has_permissions(administrator=True)
+    async def eco_admin_resetar_cooldown(self, interaction: Interaction,
+                                         usuario: Member = SlashOption(description="Usuário para resetar o cooldown.", required=True),
+                                         comando: str = SlashOption(description="Nome do comando do cooldown (ex: daily, work, crime, rob, bet).", required=True)):
+        comando = comando.lower()
+        valid_commands = ["daily", "work", "crime", "rob", "bet"]
+        if comando not in valid_commands:
+            await self.send_error_embed(interaction, "Comando Inválido", f"O nome do comando deve ser um dos seguintes: {', '.join(valid_commands)}.")
+            return
+
+        async with self.economy_manager.lock:
+            user_data = await self.economy_manager._get_user_data(usuario.id)
+            if comando in user_data["cooldowns"]:
+                del user_data["cooldowns"][comando]
+                await self.economy_manager.save_data()
+                await self.send_success_embed(interaction, "Cooldown Resetado", f"O cooldown do comando `{comando}` para {usuario.mention} foi resetado.")
+            else:
+                await self.send_error_embed(interaction, "Cooldown Não Encontrado", f"{usuario.mention} não está em cooldown para o comando `{comando}`.")
+
+    # --- Comandos de Administração da Loja ---
+    @eco_admin.subcommand(name="additemloja", description="Adiciona um novo item à loja.")
+    @application_checks.has_permissions(administrator=True)
+    async def eco_admin_additemloja(self, interaction: Interaction,
+                                    item_id: str = SlashOption(description="ID único para o item (ex: 'poco_xp').", required=True),
                                     nome: str = SlashOption(description="Nome do item para exibição.", required=True),
                                     preco: int = SlashOption(description="Preço do item em Cristais.", required=True),
                                     descricao: str = SlashOption(description="Descrição do item.", required=True),
-                                    emoji: str = SlashOption(description="Emoji para o item (opcional).", required=False, default="📦"),
+                                    emoji: Optional[str] = SlashOption(description="Emoji para o item (opcional).", required=False, default="📦"),
                                     cargo_id: Optional[str] = SlashOption(description="ID do cargo a ser dado ao usar (opcional).", required=False),
-                                    usavel: bool = SlashOption(description="Se o item pode ser usado com /usar (padrão: Não).", required=False, default=False),
-                                    desc_uso: Optional[str] = SlashOption(description="Mensagem mostrada ao usar o item (opcional).", required=False)):
+                                    usavel: Optional[bool] = SlashOption(description="Se o item é usável com /usar (padrão: Falso).", required=False, default=False),
+                                    desc_uso: Optional[str] = SlashOption(description="Descrição do que acontece ao usar o item (opcional).", required=False)):
+        item_id = item_id.lower()
         if preco < 0:
-            await interaction.response.send_message("O preço do item não pode ser negativo.", ephemeral=True)
+            await self.send_error_embed(interaction, "Preço Inválido", "O preço do item não pode ser negativo.")
             return
         
         role_id_int = None
@@ -936,23 +871,232 @@ class Economia(commands.Cog):
             try:
                 role_id_int = int(cargo_id)
             except ValueError:
-                await interaction.response.send_message("ID do Cargo inválido. Deve ser um número.", ephemeral=True)
+                await self.send_error_embed(interaction, "ID de Cargo Inválido", "O ID do cargo fornecido não é um número válido.")
                 return
 
         success = await self.shop_manager.add_shop_item(item_id, nome, preco, descricao, emoji, role_id_int, usavel, desc_uso)
         if success:
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'success')} Item **{nome}** (ID: `{item_id}`) adicionado/atualizado na loja!", ephemeral=True)
+            await self.send_success_embed(interaction, "Item Adicionado à Loja", f"O item **{nome}** (ID: `{item_id}`) foi adicionado à loja por {preco} {CURRENCY_SYMBOL}.")
         else:
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'error')} Falha ao adicionar item. Verifique os parâmetros.", ephemeral=True)
+            await self.send_error_embed(interaction, "Erro ao Adicionar Item", "Não foi possível adicionar o item. Verifique os parâmetros.")
 
-    @econadmin.subcommand(name="removeshopitem", description="Remove um item da loja.")
-    @application_checks.has_role(ADMIN_ROLE_ID)
-    async def econadmin_removeshopitem(self, interaction: Interaction, item_id: str = SlashOption(description="ID do item a ser removido.", required=True)):
+    @eco_admin.subcommand(name="remitemloja", description="Remove um item da loja.")
+    @application_checks.has_permissions(administrator=True)
+    async def eco_admin_remitemloja(self, interaction: Interaction, item_id: str = SlashOption(description="ID do item a ser removido.", required=True)):
+        item_id = item_id.lower()
         success = await self.shop_manager.remove_shop_item(item_id)
         if success:
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'success')} Item com ID `{item_id}` removido da loja.", ephemeral=True)
+            await self.send_success_embed(interaction, "Item Removido da Loja", f"O item com ID `{item_id}` foi removido da loja.")
         else:
-            await interaction.response.send_message(f"{get_emoji(self.bot, 'error')} Item com ID `{item_id}` não encontrado na loja.", ephemeral=True)
+            await self.send_error_embed(interaction, "Item Não Encontrado", f"O item com ID `{item_id}` não foi encontrado na loja.")
 
-def setup(bot: commands.Bot):
+    # --- Task para limpar cooldowns antigos (opcional, mas bom para performance a longo prazo) ---
+    @tasks.loop(hours=24) # Roda uma vez por dia
+    async def daily_check(self):
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Executando daily_check para limpar cooldowns expirados...')
+        current_time = time.time()
+        users_to_save = set()
+
+        async with self.economy_manager.lock:
+            all_data = self.economy_manager.data
+            for user_id_str, user_data in list(all_data.items()): # Usar list() para permitir modificação durante iteração
+                if "cooldowns" in user_data:
+                    cooldowns = user_data["cooldowns"]
+                    for command_name, expires_at in list(cooldowns.items()): # Usar list() aqui também
+                        if current_time >= expires_at:
+                            del cooldowns[command_name]
+                            users_to_save.add(user_id_str)
+        
+        if users_to_save:
+            await self.economy_manager.save_data()
+            print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Cooldowns expirados limpos para {len(users_to_save)} usuários.')
+        else:
+            print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Nenhum cooldown expirado para limpar.')
+
+    @daily_check.before_loop
+    async def before_daily_check(self):
+        await self.bot.wait_until_ready()
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Daily check aguardando o bot ficar pronto...')
+
+    # Listener para interações de botões da loja e inventário
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: Interaction):
+        if interaction.type == nextcord.InteractionType.component:
+            custom_id = interaction.data.get("custom_id", "")
+            
+            # Lógica para botões da Loja
+            if custom_id.startswith("buy_"):
+                item_id_to_buy = custom_id.split("_", 1)[1]
+                # Deferir para evitar "Interaction failed"
+                await interaction.response.defer(ephemeral=True, with_message=False) 
+                
+                item_data = await self.shop_manager.get_item(item_id_to_buy)
+                if not item_data:
+                    await self.send_error_embed(interaction, "Item Não Encontrado", f"O item com ID `{item_id_to_buy}` não existe mais na loja.")
+                    return
+
+                total_cost = item_data["price"] # Compra de 1 unidade pelo botão
+                user_balance = await self.economy_manager.get_balance(interaction.user.id)
+
+                if user_balance < total_cost:
+                    await self.send_error_embed(interaction, "Saldo Insuficiente", 
+                                              f"Você precisa de **{total_cost} {CURRENCY_SYMBOL}** para comprar '{item_data['name']}', mas você só tem **{user_balance} {CURRENCY_SYMBOL}**.")
+                    return
+
+                await self.economy_manager.update_balance(interaction.user.id, -total_cost, reason="item_purchase_button")
+                await self.economy_manager.add_item_to_inventory(interaction.user.id, item_id_to_buy, item_data["name"], 1)
+                
+                emoji_buy = get_emoji(self.bot, "buy")
+                await self.send_success_embed(interaction, "Compra Realizada!", 
+                                            f"{emoji_buy} Você comprou 1x **{item_data['name']}** por **{total_cost} {CURRENCY_SYMBOL}**.")
+                # Opcional: Atualizar a view da loja se quiser desabilitar o botão ou algo assim
+                # Isso pode ser complexo se a view original foi enviada por /loja e não por este listener.
+
+            elif custom_id == "shop_prev_page":
+                # A view original foi enviada por /loja. Precisamos recriar o comando.
+                # Pegar a página atual da mensagem original (se possível) ou assumir.
+                # Esta é uma limitação de views persistentes sem estado armazenado na view.
+                # Para simplificar, vamos apenas acusar o recebimento. O usuário terá que rodar /loja <pagina-1>
+                # Ou, idealmente, o comando /loja deveria lidar com a interação do botão diretamente.
+                # Para este exemplo, vamos assumir que o comando /loja será chamado novamente pelo usuário.
+                # No entanto, para uma melhor UX, o comando /loja deveria ser mais interativo.
+                
+                # Tentativa de extrair a página atual do embed da mensagem original
+                if interaction.message and interaction.message.embeds:
+                    embed_title = interaction.message.embeds[0].title
+                    if embed_title and "Página" in embed_title:
+                        try:
+                            parts = embed_title.split("Página ")[1].split("/")
+                            current_page_from_embed = int(parts[0])
+                            if current_page_from_embed > 1:
+                                # Recriar o comando /loja com a página anterior
+                                # Isso requer que o comando /loja possa ser chamado internamente ou que a view seja mais inteligente
+                                # Para este exemplo, vamos apenas deferir e pedir ao usuário para usar o comando.
+                                await interaction.response.defer() # Deferir para não dar erro
+                                # Idealmente: await self.loja(interaction, pagina=current_page_from_embed - 1)
+                                # Mas isso pode causar problemas se a interação original do /loja já foi respondida.
+                                # A melhor forma é o comando /loja original lidar com a interação do botão.
+                                # Como a view é recriada a cada chamada de /loja, o botão da view antiga não deveria mais funcionar.
+                                # Se a view é persistente, ela precisa de mais lógica.
+                                # Para o propósito deste exemplo, vamos assumir que o usuário re-executará o comando.
+                                # O defer() acima é para o caso do botão ainda estar ativo.
+                                # Se a view é recriada a cada página, o defer não é estritamente necessário aqui
+                                # pois o botão clicado é da view antiga.
+                                # A lógica de paginação real está no comando /loja ao receber o parâmetro 'pagina'.
+                                # A view ShopView é recriada a cada chamada de /loja.
+                                # O botão aqui é mais um placeholder para a lógica que deveria estar no comando.
+                                # Vamos apenas acusar o recebimento.
+                                # O ideal é que o comando /loja que criou a view também lide com os botões de navegação.
+                                # Como a view é recriada, o botão da view antiga não deveria mais funcionar.
+                                # Se a view é persistente, ela precisa de mais lógica.
+                                # Para o propósito deste exemplo, vamos assumir que o usuário re-executará o comando.
+                                # O defer() acima é para o caso do botão ainda estar ativo.
+                                # Se a view é recriada a cada página, o defer não é estritamente necessário aqui
+                                # pois o botão clicado é da view antiga.
+                                # A lógica de paginação real está no comando /loja ao receber o parâmetro 'pagina'.
+                                # A view ShopView é recriada a cada chamada de /loja.
+                                # O botão aqui é mais um placeholder para a lógica que deveria estar no comando.
+                                # Vamos apenas acusar o recebimento.
+                                pass # A lógica de paginação está no comando /loja
+                        except Exception as e:
+                            print(f"Erro ao tentar paginar loja (prev): {e}")
+                            pass # Ignora se não conseguir extrair
+                await interaction.response.defer() # Apenas para garantir que a interação seja acusada
+
+            elif custom_id == "shop_next_page":
+                # Mesma lógica do prev_page
+                if interaction.message and interaction.message.embeds:
+                    embed_title = interaction.message.embeds[0].title
+                    if embed_title and "Página" in embed_title:
+                        try:
+                            parts = embed_title.split("Página ")[1].split("/")
+                            current_page_from_embed = int(parts[0])
+                            total_pages_from_embed = int(parts[1])
+                            if current_page_from_embed < total_pages_from_embed:
+                                # await self.loja(interaction, pagina=current_page_from_embed + 1)
+                                pass
+                        except Exception as e:
+                            print(f"Erro ao tentar paginar loja (next): {e}")
+                            pass
+                await interaction.response.defer()
+            
+            # Lógica para botões do Inventário
+            elif custom_id.startswith("use_"):
+                item_id_to_use = custom_id.split("_", 1)[1]
+                await interaction.response.defer(ephemeral=True, with_message=False)
+                
+                # Re-chamar a lógica do comando /usar
+                # Isso é um pouco redundante, mas garante consistência.
+                # Idealmente, a lógica de uso seria uma função auxiliar chamada por ambos.
+                await self.usar_item_from_interaction(interaction, item_id_to_use)
+
+            elif custom_id == "inv_prev_page":
+                # Lógica similar à da loja para paginação do inventário
+                await interaction.response.defer()
+
+            elif custom_id == "inv_next_page":
+                await interaction.response.defer()
+
+    async def usar_item_from_interaction(self, interaction: Interaction, item_id: str):
+        # Esta é uma refatoração da lógica do comando /usar para ser chamada pelo listener do botão
+        item_id = item_id.lower()
+        user_id = interaction.user.id
+
+        item_in_inventory_quantity = await self.economy_manager.get_item_quantity(user_id, item_id)
+        if item_in_inventory_quantity <= 0:
+            await self.send_error_embed(interaction, "Item Não Encontrado", f"Você não possui o item com ID `{item_id}` no seu inventário.")
+            return
+
+        shop_item_data = await self.shop_manager.get_item(item_id)
+        if not shop_item_data or not shop_item_data.get("usable"):
+            await self.send_error_embed(interaction, "Item Não Usável", f"O item '{shop_item_data.get('name', item_id) if shop_item_data else item_id}' não pode ser usado.")
+            return
+
+        role_id_to_give = shop_item_data.get("role_id")
+        success_message = shop_item_data.get("use_description", f"Você usou **{shop_item_data['name']}** com sucesso!")
+        action_taken = False
+
+        if role_id_to_give:
+            try:
+                role_id_int = int(role_id_to_give)
+                role = interaction.guild.get_role(role_id_int)
+                if role and isinstance(interaction.user, Member):
+                    if role not in interaction.user.roles:
+                        await interaction.user.add_roles(role, reason=f"Usou o item {item_id} da loja.")
+                        success_message += f" Você recebeu o cargo {role.mention}!"
+                        action_taken = True
+                    else:
+                        success_message += " Você já possui o cargo associado."
+                        action_taken = True
+                elif not role:
+                    await self.send_error_embed(interaction, "Erro ao Usar Item", f"O cargo associado ao item (ID: {role_id_int}) não foi encontrado no servidor.")
+                    return
+            except ValueError:
+                 await self.send_error_embed(interaction, "Erro de Configuração do Item", f"O ID do cargo ({role_id_to_give}) para o item {item_id} não é um número válido.")
+                 return
+            except nextcord.Forbidden:
+                await self.send_error_embed(interaction, "Permissão Negada", f"Não tenho permissão para dar o cargo {role.name if role else 'desconhecido'}. Verifique minhas permissões.")
+                return
+            except Exception as e:
+                print(f"Erro ao dar cargo pelo item {item_id}: {e}")
+                await self.send_error_embed(interaction, "Erro Inesperado", f"Ocorreu um erro ao tentar dar o cargo. Tente novamente mais tarde.")
+                return
+        else:
+            action_taken = True 
+
+        if action_taken:
+            removed = await self.economy_manager.remove_item_from_inventory(user_id, item_id, 1)
+            if removed:
+                emoji_use = get_emoji(self.bot, "use")
+                await self.send_success_embed(interaction, "Item Usado!", f"{emoji_use} {success_message}")
+            else:
+                await self.send_error_embed(interaction, "Erro ao Usar", "Não foi possível remover o item do seu inventário após o uso.")
+        else:
+            removed = await self.economy_manager.remove_item_from_inventory(user_id, item_id, 1)
+            if removed:
+                 await self.send_success_embed(interaction, "Item Consumido", f"Você consumiu **{shop_item_data['name']}**.")
+            else:
+                await self.send_error_embed(interaction, "Erro ao Consumir", "Não foi possível remover o item do seu inventário.")
+
+def setup(bot):
     bot.add_cog(Economia(bot))
