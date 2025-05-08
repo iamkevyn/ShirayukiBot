@@ -1,3 +1,4 @@
+from typing import Optional # ADICIONADO PARA CORRIGIR NameError
 # /home/ubuntu/ShirayukiBot/cogs/Comandos.py
 # Cog principal para comandos gerais, moderação básica e o sistema de ajuda.
 
@@ -321,307 +322,539 @@ class HelpView(View):
         # Mapeamento de Nomes Amigáveis, Emojis e Nomes Reais das Cogs
         cog_display_info = {
             "help_home": {"name": "Página Inicial", "emoji": get_emoji(self.bot, 'question'), "color": Color.purple(), "real_cog_name": None},
-            "help_comandos": {"name": "Comandos Gerais", "emoji": get_emoji(self.bot, 'gear'), "color": Color.blue(), "real_cog_name": "Comandos"},
+            "help_comandos": {"name": "Comandos Gerais", "emoji": get_emoji(self.bot, 'tools'), "color": Color.blue(), "real_cog_name": "Comandos"},
             "help_economia": {"name": "Economia", "emoji": get_emoji(self.bot, 'money'), "color": Color.gold(), "real_cog_name": "Economia"},
-            "help_informacoes": {"name": "Informações", "emoji": get_emoji(self.bot, 'info'), "color": Color.teal(), "real_cog_name": "Informacoes"},
             "help_interacoes": {"name": "Interações", "emoji": get_emoji(self.bot, 'interact'), "color": Color.magenta(), "real_cog_name": "Interacoes"},
             "help_jogos": {"name": "Jogos", "emoji": get_emoji(self.bot, 'dice'), "color": Color.green(), "real_cog_name": "Jogos"},
             "help_musica": {"name": "Música", "emoji": get_emoji(self.bot, 'music'), "color": Color.red(), "real_cog_name": "Musica"},
-            "help_utilitarios": {"name": "Utilitários", "emoji": get_emoji(self.bot, 'tools'), "color": Color.dark_grey(), "real_cog_name": "Utilitarios"}
+            "help_utilitarios": {"name": "Utilitários", "emoji": get_emoji(self.bot, 'gear'), "color": Color.orange(), "real_cog_name": "Utilitarios"},
+            "help_informacoes": {"name": "Informações", "emoji": get_emoji(self.bot, 'info'), "color": Color.teal(), "real_cog_name": "Informacoes"}
         }
 
-        display_info = cog_display_info.get(internal_cog_name, cog_display_info["help_home"])
-        embed = Embed(title=f"{display_info['emoji']} Ajuda: {display_info['name']}", color=display_info['color'])
-        
+        info = cog_display_info.get(internal_cog_name)
+        if not info:
+            return Embed(title="Erro", description="Categoria de ajuda não encontrada.", color=Color.red())
+
+        embed = Embed(title=f"{info['emoji']} Ajuda: {info['name']}", color=info['color'])
+        embed.set_footer(text=f"Use os botões para navegar. | Shirayuki v{self.bot.version}")
+
         if internal_cog_name == "help_home":
-            embed.description = (f"Bem-vindo(a) à ajuda da {self.bot.user.name}!\n\n"
-                               f"Use os botões abaixo para navegar pelas categorias de comandos. "
-                               f"Cada categoria mostrará os comandos slash disponíveis e uma breve descrição.\n\n"
-                               f"Lembre-se que todos os comandos são executados usando `/` seguido do nome do comando.")
-            embed.add_field(name="Como Usar?", value="Clique em um botão de categoria para ver os comandos. Se precisar de mais detalhes sobre um comando específico, geralmente a descrição do próprio comando ao digitá-lo no Discord já ajuda!", inline=False)
-            embed.set_footer(text="Selecione uma categoria abaixo.")
-            return embed
+            embed.description = (
+                f"Bem-vindo(a) à central de ajuda da Shirayuki! ✨\n\n"
+                f"Eu sou um bot multifuncional com comandos de moderação, economia, música, jogos e muito mais. "
+                f"Use os botões abaixo para explorar as categorias de comandos disponíveis.\n\n"
+                f"**Como usar os comandos:**\n"
+                f"A maioria dos meus comandos são comandos de barra (slash commands). Comece digitando `/` no chat "
+                f"e o Discord mostrará uma lista dos meus comandos disponíveis para você.\n\n"
+                f"Se precisar de ajuda com um comando específico, geralmente a descrição do comando ao selecioná-lo "
+                f"já oferece uma boa ideia do que ele faz e quais opções ele aceita.\n\n"
+                f"{get_emoji(self.bot, 'happy_flower')} Divirta-se explorando!"
+            )
+            embed.add_field(name="Versão do Bot", value=f"`{self.bot.version}`", inline=True)
+            embed.add_field(name="Prefixo (Legado)", value="`/` (Slash Commands são o padrão)", inline=True)
+            embed.add_field(name="Desenvolvedor", value=f"<@{DEVELOPER_ID}>", inline=True)
+            # Adicionar contagem de cogs e comandos?
+            total_cogs = len(self.bot.cogs)
+            total_app_commands = len(self.bot.get_all_application_commands())
+            embed.add_field(name="Módulos (Cogs)", value=str(total_cogs), inline=True)
+            embed.add_field(name="Comandos Slash", value=str(total_app_commands), inline=True)
+            ping = round(self.bot.latency * 1000)
+            embed.add_field(name="Latência", value=f"{ping}ms", inline=True)
 
-        real_cog_name = display_info.get("real_cog_name")
-        if not real_cog_name:
-            embed.description = "Categoria de ajuda não encontrada."
-            return embed
-            
-        cog = self.bot.get_cog(real_cog_name)
-        if not cog:
-            embed.description = f"A categoria 	`{display_info['name']}`	 não está carregada ou não existe."
-            return embed
-
-        # Atualizado para buscar comandos de aplicação (slash commands)
-        app_commands = cog.get_application_commands()
-        if not app_commands:
-            embed.description = "Nenhum comando de barra (/) encontrado nesta categoria."
-            return embed
-
-        command_text_list = []
-        for cmd in sorted(app_commands, key=lambda c: c.qualified_name):
-            if isinstance(cmd, (nextcord.SlashApplicationCommand, nextcord.MessageApplicationCommand, nextcord.UserApplicationCommand)):
-                param_string = ""
-                if hasattr(cmd, 'options') and cmd.options:
-                    for option_name, option_details in cmd.options.items():
-                        required_indicator = "" # Não há indicador padrão de obrigatoriedade visível aqui, a UI do Discord mostra
-                        param_string += f" `{{{option_name}}}`"
+        elif info["real_cog_name"]:
+            cog = self.bot.get_cog(info["real_cog_name"])
+            if cog:
+                commands_list = []
+                # Filtrar apenas comandos de aplicação (slash commands) da cog
+                app_commands = [cmd for cmd in cog.get_application_commands() if isinstance(cmd, (nextcord.SlashApplicationCommand, nextcord.GroupCog))]
                 
-                cmd_type_prefix = "/" # Default para SlashCommand
-                if isinstance(cmd, nextcord.MessageApplicationCommand): cmd_type_prefix = "(Msg) "
-                elif isinstance(cmd, nextcord.UserApplicationCommand): cmd_type_prefix = "(Usr) "
-                
-                command_text_list.append(f"**`{cmd_type_prefix}{cmd.qualified_name}{param_string}`**\n{cmd.description}")
-        
-        if command_text_list:
-            embed.description = "\n\n".join(command_text_list)
+                if not app_commands:
+                    commands_list.append("*Nenhum comando de barra encontrado nesta categoria.*");
+                else:
+                    for cmd in sorted(app_commands, key=lambda c: c.qualified_name):
+                        if isinstance(cmd, nextcord.SlashApplicationCommand):
+                            description = cmd.description or "Sem descrição."
+                            if len(description) > 70: description = description[:67] + "..."
+                            commands_list.append(f"**`/{cmd.qualified_name}`** - {description}")
+                        elif isinstance(cmd, nextcord.GroupCog): # Para grupos de subcomandos
+                            # Listar subcomandos do grupo
+                            sub_cmds_desc = []
+                            for sub_cmd_name, sub_cmd_obj in sorted(cmd.walk_commands(), key=lambda c: c[0]):
+                                if isinstance(sub_cmd_obj, nextcord.SlashApplicationSubcommand):
+                                    sub_desc = sub_cmd_obj.description or "Sem descrição."
+                                    if len(sub_desc) > 60: sub_desc = sub_desc[:57] + "..."
+                                    sub_cmds_desc.append(f"  **`{sub_cmd_obj.qualified_name}`** - {sub_desc}")
+                            
+                            if sub_cmds_desc:
+                                group_desc = cmd.description or f"Comandos relacionados a {cmd.name}."
+                                commands_list.append(f"**`/{cmd.name}`** - {group_desc}\n" + "\n".join(sub_cmds_desc))
+                            else:
+                                commands_list.append(f"**`/{cmd.name}`** - {cmd.description or 'Grupo de comandos.'} (Sem subcomandos visíveis)")
+                                
+                embed.description = "\n".join(commands_list) if commands_list else "Nenhum comando de barra encontrado nesta categoria."
+            else:
+                embed.description = f"A categoria '{info['name']}' não pôde ser carregada ou não possui comandos."
         else:
-            embed.description = "Nenhum comando de barra (/) encontrado nesta categoria que possa ser exibido."
+            embed.description = "Informações para esta categoria não disponíveis."
 
         return embed
 
-    async def _send_help_for_cog(self, interaction: Interaction, cog_name_key: str):
-        self.current_cog_name = cog_name_key
-        self._update_buttons()
-        help_embed = await self._get_cog_help_embed(cog_name_key)
-        await interaction.response.edit_message(embed=help_embed, view=self)
-
-    @nextcord.ui.button(label="Início", style=ButtonStyle.primary, custom_id="help_home", row=0)
+    @nextcord.ui.button(label="Início", style=ButtonStyle.primary, custom_id="help_home")
     async def home_button(self, button: Button, interaction: Interaction):
-        await self._send_help_for_cog(interaction, "help_home")
+        self.current_cog_name = "help_home"
+        self._update_buttons()
+        embed = await self._get_cog_help_embed("help_home")
+        await interaction.response.edit_message(embed=embed, view=self)
 
-    @nextcord.ui.button(label="Comandos", style=ButtonStyle.secondary, custom_id="help_comandos", row=0)
+    @nextcord.ui.button(label="Comandos", style=ButtonStyle.secondary, custom_id="help_comandos")
     async def comandos_button(self, button: Button, interaction: Interaction):
-        await self._send_help_for_cog(interaction, "help_comandos")
+        self.current_cog_name = "help_comandos"
+        self._update_buttons()
+        embed = await self._get_cog_help_embed("help_comandos")
+        await interaction.response.edit_message(embed=embed, view=self)
 
-    @nextcord.ui.button(label="Economia", style=ButtonStyle.green, custom_id="help_economia", row=0)
+    @nextcord.ui.button(label="Economia", style=ButtonStyle.green, custom_id="help_economia")
     async def economia_button(self, button: Button, interaction: Interaction):
-        await self._send_help_for_cog(interaction, "help_economia")
-
-    @nextcord.ui.button(label="Informações", style=ButtonStyle.secondary, custom_id="help_informacoes", row=1)
-    async def informacoes_button(self, button: Button, interaction: Interaction):
-        await self._send_help_for_cog(interaction, "help_informacoes")
+        self.current_cog_name = "help_economia"
+        self._update_buttons()
+        embed = await self._get_cog_help_embed("help_economia")
+        await interaction.response.edit_message(embed=embed, view=self)
 
     @nextcord.ui.button(label="Interações", style=ButtonStyle.secondary, custom_id="help_interacoes", row=1)
     async def interacoes_button(self, button: Button, interaction: Interaction):
-        await self._send_help_for_cog(interaction, "help_interacoes")
-    
+        self.current_cog_name = "help_interacoes"
+        self._update_buttons()
+        embed = await self._get_cog_help_embed("help_interacoes")
+        await interaction.response.edit_message(embed=embed, view=self)
+
     @nextcord.ui.button(label="Jogos", style=ButtonStyle.green, custom_id="help_jogos", row=1)
     async def jogos_button(self, button: Button, interaction: Interaction):
-        await self._send_help_for_cog(interaction, "help_jogos")
+        self.current_cog_name = "help_jogos"
+        self._update_buttons()
+        embed = await self._get_cog_help_embed("help_jogos")
+        await interaction.response.edit_message(embed=embed, view=self)
 
     @nextcord.ui.button(label="Música", style=ButtonStyle.secondary, custom_id="help_musica", row=2)
     async def musica_button(self, button: Button, interaction: Interaction):
-        await self._send_help_for_cog(interaction, "help_musica")
+        self.current_cog_name = "help_musica"
+        self._update_buttons()
+        embed = await self._get_cog_help_embed("help_musica")
+        await interaction.response.edit_message(embed=embed, view=self)
 
     @nextcord.ui.button(label="Utilitários", style=ButtonStyle.secondary, custom_id="help_utilitarios", row=2)
     async def utilitarios_button(self, button: Button, interaction: Interaction):
-        await self._send_help_for_cog(interaction, "help_utilitarios")
+        self.current_cog_name = "help_utilitarios"
+        self._update_buttons()
+        embed = await self._get_cog_help_embed("help_utilitarios")
+        await interaction.response.edit_message(embed=embed, view=self)
 
+    @nextcord.ui.button(label="Informações", style=ButtonStyle.secondary, custom_id="help_informacoes", row=2)
+    async def informacoes_button(self, button: Button, interaction: Interaction):
+        self.current_cog_name = "help_informacoes"
+        self._update_buttons()
+        embed = await self._get_cog_help_embed("help_informacoes")
+        await interaction.response.edit_message(embed=embed, view=self)
+
+# --- Cog Principal --- 
 class Comandos(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.start_time = time.time()
-        print("Cog Comandos carregada.")
+        self.bot.version = "3.1.0-alpha" # Versão do bot
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Cog Comandos carregada.')
 
-    @nextcord.slash_command(name="sugestao", description="Envia uma sugestão para o desenvolvedor do bot.")
-    async def sugestao(self, interaction: Interaction):
-        await interaction.response.send_modal(SuggestionModal(self.bot))
+    def cog_unload(self):
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [INFO] Cog Comandos descarregada.')
 
-    @nextcord.slash_command(name="bugreport", description="Reporta um bug encontrado no bot para o desenvolvedor.")
-    async def bug_report(self, interaction: Interaction):
-        await interaction.response.send_modal(BugReportModal(self.bot))
-
-    @nextcord.slash_command(name="botinfo", description="Mostra informações sobre mim!")
-    async def bot_info(self, interaction: Interaction):
-        await interaction.response.defer()
-        cpu_usage = psutil.cpu_percent()
-        ram_usage = psutil.virtual_memory().percent
-        ram_total_gb = psutil.virtual_memory().total / (1024**3)
-        ram_used_gb = psutil.virtual_memory().used / (1024**3)
-        uptime_seconds = time.time() - self.start_time
-        uptime_str = str(timedelta(seconds=int(uptime_seconds)))
-
-        embed = Embed(title=f"{get_emoji(self.bot, 'info')} Informações sobre {self.bot.user.name}", color=Color.blue(), timestamp=datetime.now(timezone.utc))
-        embed.set_thumbnail(url=self.bot.user.display_avatar.url if self.bot.user.display_avatar else None)
-        embed.add_field(name="Desenvolvedor", value=f"<@{DEVELOPER_ID}>", inline=True)
-        embed.add_field(name="Versão Nextcord", value=nextcord.__version__, inline=True)
-        embed.add_field(name="Versão Python", value=platform.python_version(), inline=True)
-        embed.add_field(name="Sistema Operacional", value=f"{platform.system()} {platform.release()}", inline=True)
-        embed.add_field(name="Uso de CPU", value=f"{cpu_usage}%", inline=True)
-        embed.add_field(name="Uso de RAM", value=f"{ram_usage}% ({ram_used_gb:.2f}GB / {ram_total_gb:.2f}GB)", inline=True)
-        embed.add_field(name="Tempo de Atividade", value=uptime_str, inline=True)
-        embed.add_field(name="Servidores", value=str(len(self.bot.guilds)), inline=True)
-        embed.add_field(name="Usuários Totais (aproximado)", value=str(sum(guild.member_count for guild in self.bot.guilds if guild.member_count is not None)), inline=True)
-        embed.add_field(name="Latência da API", value=f"{round(self.bot.latency * 1000)}ms", inline=True)
-        embed.add_field(name="Links Úteis", value=f"[Me adicione](https://discord.com/oauth2/authorize?client_id={self.bot.user.id}&permissions=8&scope=bot%20applications.commands) | [Suporte (se houver)]", inline=False)
-        embed.set_footer(text=f"ID do Bot: {self.bot.user.id}")
-        await interaction.followup.send(embed=embed)
-
-    @nextcord.slash_command(name="avatar", description="Mostra o avatar de um usuário.")
-    async def avatar(self, interaction: Interaction, usuario: Member = SlashOption(description="O usuário para mostrar o avatar (opcional)", required=False)):
-        target = usuario or interaction.user
-        embed = Embed(title=f"Avatar de {target.display_name}", color=target.color)
-        if target.display_avatar:
-            embed.set_image(url=target.display_avatar.url)
-            embed.set_footer(text=f"Solicitado por {interaction.user.display_name}")
-            await interaction.response.send_message(embed=embed)
+    async def send_error_embed(self, interaction: Interaction, title: str, description: str):
+        embed = Embed(title=f"{get_emoji(self.bot, 'sad')} {title}", description=description, color=Color.red())
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.response.send_message("Não foi possível obter o avatar deste usuário.", ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @nextcord.slash_command(name="serverinfo", description="Mostra informações sobre o servidor atual.")
+    async def send_success_embed(self, interaction: Interaction, title: str, description: str):
+        embed = Embed(title=f"{get_emoji(self.bot, 'happy_flower')} {title}", description=description, color=Color.green())
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # --- Comandos Gerais --- 
+    @nextcord.slash_command(name="ping", description="Verifica a latência do bot.", guild_ids=[SERVER_ID])
+    async def ping(self, interaction: Interaction):
+        latency_ms = round(self.bot.latency * 1000)
+        embed = Embed(title="🏓 Pong!", description=f"Latência da API: **{latency_ms}ms**", color=Color.blue())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @nextcord.slash_command(name="avatar", description="Mostra o avatar de um usuário.", guild_ids=[SERVER_ID])
+    async def avatar(self, interaction: Interaction, usuario: Optional[Member] = SlashOption(description="O usuário para mostrar o avatar (padrão: você mesmo).", required=False)):
+        target_user = usuario or interaction.user
+        avatar_url = target_user.display_avatar.url
+        embed = Embed(title=f"🖼️ Avatar de {target_user.display_name}", color=target_user.color)
+        embed.set_image(url=avatar_url)
+        embed.set_footer(text=f"Solicitado por {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
+
+    @nextcord.slash_command(name="userinfo", description="Mostra informações sobre um usuário.", guild_ids=[SERVER_ID])
+    async def userinfo(self, interaction: Interaction, usuario: Optional[Member] = SlashOption(description="O usuário para mostrar informações (padrão: você mesmo).", required=False)):
+        target_user = usuario or interaction.user
+        
+        embed = Embed(title=f"👤 Informações de {target_user.display_name}", color=target_user.color, timestamp=datetime.now(timezone.utc))
+        embed.set_thumbnail(url=target_user.display_avatar.url)
+        embed.add_field(name="Nome Completo", value=f"{target_user.name}#{target_user.discriminator}", inline=True)
+        embed.add_field(name="ID do Usuário", value=f"`{target_user.id}`", inline=True)
+        embed.add_field(name="Apelido", value=target_user.nick or "Nenhum", inline=True)
+        
+        created_at_unix = int(target_user.created_at.timestamp())
+        embed.add_field(name="Conta Criada em", value=f"<t:{created_at_unix}:F> (<t:{created_at_unix}:R>)", inline=False)
+        
+        if isinstance(target_user, Member):
+            joined_at_unix = int(target_user.joined_at.timestamp())
+            embed.add_field(name="Entrou no Servidor em", value=f"<t:{joined_at_unix}:F> (<t:{joined_at_unix}:R>)", inline=False)
+            
+            roles = [role.mention for role in reversed(target_user.roles) if role.name != "@everyone"]
+            roles_str = ", ".join(roles) if roles else "Nenhum cargo"
+            if len(roles_str) > 1024: roles_str = roles_str[:1020] + "..."
+            embed.add_field(name=f"Cargos ({len(roles)})", value=roles_str, inline=False)
+            
+            highest_role = target_user.top_role.mention if target_user.top_role.name != "@everyone" else "Nenhum (além de @everyone)"
+            embed.add_field(name="Cargo Mais Alto", value=highest_role, inline=True)
+            embed.add_field(name="É Bot?", value="Sim" if target_user.bot else "Não", inline=True)
+            
+            # Permissões (exemplo, pode ser muito longo)
+            # perms = target_user.guild_permissions
+            # if perms.administrator: embed.add_field(name="Administrador?", value="Sim", inline=True)
+            
+        embed.set_footer(text=f"Solicitado por {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @nextcord.slash_command(name="serverinfo", description="Mostra informações sobre o servidor atual.", guild_ids=[SERVER_ID])
     @application_checks.guild_only()
-    async def server_info(self, interaction: Interaction):
+    async def serverinfo(self, interaction: Interaction):
         guild = interaction.guild
         if not guild: # Checagem extra, embora guild_only() já faça isso
-            await interaction.response.send_message("Este comando só pode ser usado em um servidor.", ephemeral=True)
+            await self.send_error_embed(interaction, "Comando Inválido", "Este comando só pode ser usado em um servidor.")
             return
 
-        await interaction.response.defer()
-        embed = Embed(title=f"Informações do Servidor: {guild.name}", color=Color.random(), timestamp=guild.created_at)
+        embed = Embed(title=f"ℹ️ Informações do Servidor: {guild.name}", color=Color.random(), timestamp=datetime.now(timezone.utc))
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(name="ID do Servidor", value=guild.id, inline=True)
-        embed.add_field(name="Dono(a)", value=guild.owner.mention if guild.owner else "Desconhecido", inline=True)
-        embed.add_field(name="Membros", value=str(guild.member_count), inline=True)
-        embed.add_field(name="Canais de Texto", value=str(len(guild.text_channels)), inline=True)
-        embed.add_field(name="Canais de Voz", value=str(len(guild.voice_channels)), inline=True)
-        embed.add_field(name="Cargos", value=str(len(guild.roles)), inline=True)
-        embed.add_field(name="Nível de Boost", value=f"Nível {guild.premium_tier} ({guild.premium_subscription_count} boosts)", inline=True)
-        embed.add_field(name="Criado em", value=f"<t:{int(guild.created_at.timestamp())}:F> (<t:{int(guild.created_at.timestamp())}:R>)", inline=False)
         
-        features_str = ", ".join(guild.features) if guild.features else "Nenhuma especial"
-        embed.add_field(name="Recursos do Servidor", value=features_str, inline=False)
+        embed.add_field(name="ID do Servidor", value=f"`{guild.id}`", inline=True)
+        embed.add_field(name="Dono(a)", value=guild.owner.mention if guild.owner else "Desconhecido", inline=True)
+        
+        created_at_unix = int(guild.created_at.timestamp())
+        embed.add_field(name="Criado em", value=f"<t:{created_at_unix}:F> (<t:{created_at_unix}:R>)", inline=True)
+        
+        embed.add_field(name="Nível de Verificação", value=str(guild.verification_level).capitalize(), inline=True)
+        embed.add_field(name="Filtro de Conteúdo Explícito", value=str(guild.explicit_content_filter).capitalize(), inline=True)
+        # embed.add_field(name="Nível de MFA", value="Ativado" if guild.mfa_level == nextcord.MFALevel.require_mfa else "Desativado", inline=True)
+        embed.add_field(name="Nível de MFA", value=str(guild.mfa_level).replace("require_mfa", "Requer MFA").replace("none", "Nenhum"), inline=True)
+
+        total_members = guild.member_count
+        online_members = sum(1 for m in guild.members if m.status != nextcord.Status.offline and not m.bot)
+        bots = sum(1 for m in guild.members if m.bot)
+        humans = total_members - bots
+        embed.add_field(name="Membros", value=f"**Total:** {total_members}\n**Humanos:** {humans} ({online_members} online)\n**Bots:** {bots}", inline=True)
+
+        text_channels = len(guild.text_channels)
+        voice_channels = len(guild.voice_channels)
+        categories = len(guild.categories)
+        embed.add_field(name="Canais", value=f"**Texto:** {text_channels}\n**Voz:** {voice_channels}\n**Categorias:** {categories}", inline=True)
+
+        roles_count = len(guild.roles)
+        emojis_count = len(guild.emojis)
+        # stickers_count = len(guild.stickers) # Requer intents.stickers
+        embed.add_field(name="Outros", value=f"**Cargos:** {roles_count}\n**Emojis:** {emojis_count}", inline=True)
+        
+        if guild.premium_tier > 0:
+            embed.add_field(name="Nível de Boost", value=f"Nível {guild.premium_tier}", inline=True)
+            embed.add_field(name="Boosts", value=str(guild.premium_subscription_count), inline=True)
+        
+        if guild.features:
+            features_str = ", ".join([f.replace("_", " ").title() for f in guild.features])
+            if len(features_str) > 1024: features_str = features_str[:1020] + "..."
+            embed.add_field(name="Recursos do Servidor", value=features_str, inline=False)
 
         if guild.banner:
             embed.set_image(url=guild.banner.url)
-        await interaction.followup.send(embed=embed)
-
-    @nextcord.slash_command(name="userinfo", description="Mostra informações sobre um usuário.")
-    async def user_info(self, interaction: Interaction, usuario: Member = SlashOption(description="O usuário para mostrar informações (opcional)", required=False)):
-        target_user = usuario or interaction.user
         
-        # Se for um User e não Member (ex: usuário não está no servidor, mas é um comando global)
-        # Tentamos buscar o Member para ter informações do servidor se possível
-        target_member: Optional[Member] = None
-        if isinstance(target_user, User) and interaction.guild:
-            target_member = interaction.guild.get_member(target_user.id)
-        elif isinstance(target_user, Member):
-            target_member = target_user
+        embed.set_footer(text=f"Solicitado por {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @nextcord.slash_command(name="botinfo", description="Mostra informações sobre mim, a Shirayuki!", guild_ids=[SERVER_ID])
+    async def botinfo(self, interaction: Interaction):
+        app_info = await self.bot.application_info()
+        owner = app_info.owner
+
+        # Uptime
+        current_time = time.time()
+        difference = int(round(current_time - self.start_time))
+        uptime_str = str(timedelta(seconds=difference))
+
+        # CPU e RAM
+        cpu_usage = psutil.cpu_percent()
+        ram_usage = psutil.virtual_memory().percent
+        ram_total_gb = round(psutil.virtual_memory().total / (1024**3), 1)
+        ram_used_gb = round(psutil.virtual_memory().used / (1024**3), 1)
+
+        embed = Embed(title=f"❄️ Informações sobre {self.bot.user.name}", color=Color.blurple(), timestamp=datetime.now(timezone.utc))
+        embed.set_thumbnail(url=self.bot.user.display_avatar.url)
+        embed.add_field(name="Desenvolvedor(a)", value=owner.mention if owner else "Desconhecido", inline=True)
+        embed.add_field(name="Versão do Bot", value=f"`{self.bot.version}`", inline=True)
+        embed.add_field(name="Versão do Nextcord", value=f"`{nextcord.__version__}`", inline=True)
+        embed.add_field(name="Versão do Python", value=f"`{platform.python_version()}`", inline=True)
+        embed.add_field(name="Sistema Operacional", value=f"`{platform.system()} {platform.release()}`", inline=True)
+        embed.add_field(name="Tempo Online (Uptime)", value=uptime_str, inline=True)
+        embed.add_field(name="Servidores", value=str(len(self.bot.guilds)), inline=True)
+        total_users = sum(guild.member_count for guild in self.bot.guilds)
+        embed.add_field(name="Usuários Totais (em cache)", value=str(total_users), inline=True)
+        embed.add_field(name="Latência da API", value=f"{round(self.bot.latency * 1000)}ms", inline=True)
+        embed.add_field(name="Uso de CPU", value=f"{cpu_usage}%", inline=True)
+        embed.add_field(name="Uso de RAM", value=f"{ram_usage}% ({ram_used_gb}GB / {ram_total_gb}GB)", inline=True)
         
-        display_target = target_member or target_user # Prioriza Member para infos do servidor
+        # Comandos (contagem)
+        total_app_commands = len(self.bot.get_all_application_commands())
+        embed.add_field(name="Comandos Slash Registrados", value=str(total_app_commands), inline=True)
 
-        await interaction.response.defer()
-        embed = Embed(title=f"Informações de {display_target.name}#{display_target.discriminator}", color=display_target.color, timestamp=display_target.created_at)
-        if display_target.display_avatar:
-            embed.set_thumbnail(url=display_target.display_avatar.url)
-        
-        embed.add_field(name="ID do Usuário", value=display_target.id, inline=True)
-        embed.add_field(name="Menção", value=display_target.mention, inline=True)
-        embed.add_field(name="É um Bot?", value="Sim" if display_target.bot else "Não", inline=True)
-        embed.add_field(name="Conta Criada em", value=f"<t:{int(display_target.created_at.timestamp())}:F> (<t:{int(display_target.created_at.timestamp())}:R>)", inline=False)
+        embed.set_footer(text="Feita com ❤️ e muito código!")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        if target_member: # Informações específicas do membro no servidor
-            embed.add_field(name="Apelido no Servidor", value=target_member.nick or "Nenhum", inline=True)
-            embed.add_field(name="Entrou no Servidor em", value=f"<t:{int(target_member.joined_at.timestamp())}:F> (<t:{int(target_member.joined_at.timestamp())}:R>)" if target_member.joined_at else "Desconhecido", inline=False)
-            roles = [role.mention for role in reversed(target_member.roles) if role.name != "@everyone"]
-            roles_str = ", ".join(roles) if roles else "Nenhum cargo específico"
-            if len(roles_str) > 1024: # Limite do campo do embed
-                roles_str = roles_str[:1020] + "..."
-            embed.add_field(name=f"Cargos ({len(roles)})", value=roles_str, inline=False)
-            if target_member.guild_permissions:
-                perms_list = [perm.replace("_", " ").title() for perm, value in target_member.guild_permissions if value]
-                # embed.add_field(name="Permissões Chave", value=", ".join(perms_list[:5]) if perms_list else "Nenhuma especial", inline=False)
-        
-        await interaction.followup.send(embed=embed)
+    @nextcord.slash_command(name="sugestao", description="Envia uma sugestão para o desenvolvedor do bot.", guild_ids=[SERVER_ID])
+    async def sugestao(self, interaction: Interaction):
+        modal = SuggestionModal(self.bot)
+        await interaction.response.send_modal(modal)
 
-    @nextcord.slash_command(name="kick", description="Expulsa um membro do servidor.")
-    @application_checks.has_permissions(kick_members=True)
-    @application_checks.bot_has_permissions(kick_members=True)
-    async def kick_member(self, interaction: Interaction, 
-                          membro: Member = SlashOption(description="O membro para expulsar", required=True),
-                          motivo: Optional[str] = SlashOption(description="Motivo da expulsão (opcional)", required=False)):
-        if not interaction.guild:
-            await interaction.response.send_message("Este comando só pode ser usado em um servidor.", ephemeral=True)
-            return
-        if membro == interaction.user:
-            await interaction.response.send_message("Você não pode se expulsar!", ephemeral=True)
-            return
-        if membro == self.bot.user:
-            await interaction.response.send_message("Eu não posso me expulsar!", ephemeral=True)
-            return
-        # Checagem de hierarquia (simplificada)
-        if interaction.user.top_role <= membro.top_role and interaction.guild.owner != interaction.user:
-            await interaction.response.send_message("Você não pode expulsar um membro com cargo igual ou superior ao seu.", ephemeral=True)
-            return
-        if interaction.guild.me.top_role <= membro.top_role:
-            await interaction.response.send_message("Eu não posso expulsar um membro com cargo igual ou superior ao meu.", ephemeral=True)
-            return
+    @nextcord.slash_command(name="bugreport", description="Reporta um bug para o desenvolvedor do bot.", guild_ids=[SERVER_ID])
+    async def bugreport(self, interaction: Interaction):
+        modal = BugReportModal(self.bot)
+        await interaction.response.send_modal(modal)
 
-        confirm_embed = Embed(
-            title=f"Confirmação de Kick: {membro.name}",
-            description=f"Você tem certeza que deseja expulsar {membro.mention}?\n**Motivo:** {motivo or 'Não especificado'}",
-            color=Color.orange()
-        )
-        view = ConfirmModerationView(self.bot, "kick", membro, interaction.user, motivo)
-        msg = await interaction.response.send_message(embed=confirm_embed, view=view, ephemeral=True)
-        view.message = msg # Passa a mensagem para a view poder editá-la no timeout
+    @nextcord.slash_command(name="ajuda", description="Mostra a mensagem de ajuda com todos os comandos.", guild_ids=[SERVER_ID])
+    async def ajuda(self, interaction: Interaction):
+        view = HelpView(self.bot, interaction)
+        initial_embed = await view._get_cog_help_embed("help_home")
+        await interaction.response.send_message(embed=initial_embed, view=view, ephemeral=True)
+        view.message = await interaction.original_message() # Armazena a mensagem para edição no timeout
 
-    @nextcord.slash_command(name="ban", description="Bane um membro do servidor.")
-    @application_checks.has_permissions(ban_members=True)
-    @application_checks.bot_has_permissions(ban_members=True)
-    async def ban_member(self, interaction: Interaction, 
-                       membro: Member = SlashOption(description="O membro para banir", required=True),
-                       motivo: Optional[str] = SlashOption(description="Motivo do banimento (opcional)", required=False),
-                       dias_mensagens_deletadas: Optional[int] = SlashOption(description="Número de dias de mensagens para deletar (0-7, padrão 0)", required=False, min_value=0, max_value=7)):
-        if not interaction.guild:
-            await interaction.response.send_message("Este comando só pode ser usado em um servidor.", ephemeral=True)
-            return
-        if membro == interaction.user:
-            await interaction.response.send_message("Você não pode se banir!", ephemeral=True)
-            return
-        if membro == self.bot.user:
-            await interaction.response.send_message("Eu não posso me banir!", ephemeral=True)
-            return
-        if interaction.user.top_role <= membro.top_role and interaction.guild.owner != interaction.user:
-            await interaction.response.send_message("Você não pode banir um membro com cargo igual ou superior ao seu.", ephemeral=True)
-            return
-        if interaction.guild.me.top_role <= membro.top_role:
-            await interaction.response.send_message("Eu não posso banir um membro com cargo igual ou superior ao meu.", ephemeral=True)
-            return
-
-        delete_days = dias_mensagens_deletadas if dias_mensagens_deletadas is not None else 0
-
-        confirm_embed = Embed(
-            title=f"Confirmação de Ban: {membro.name}",
-            description=f"Você tem certeza que deseja banir {membro.mention}?\n**Motivo:** {motivo or 'Não especificado'}\n**Deletar mensagens dos últimos:** {delete_days} dias",
-            color=Color.red()
-        )
-        view = ConfirmModerationView(self.bot, "ban", membro, interaction.user, motivo, delete_days=delete_days)
-        msg = await interaction.response.send_message(embed=confirm_embed, view=view, ephemeral=True)
-        view.message = msg
-
-    @nextcord.slash_command(name="limpar", description="Limpa uma quantidade de mensagens no canal.")
+    # --- Comandos de Moderação --- 
+    @nextcord.slash_command(name="limpar", description="Limpa uma quantidade de mensagens no canal atual.", guild_ids=[SERVER_ID])
     @application_checks.has_permissions(manage_messages=True)
     @application_checks.bot_has_permissions(manage_messages=True)
-    async def limpar_mensagens(self, interaction: Interaction, quantidade: int = SlashOption(description="Número de mensagens para limpar (1-100)", required=True, min_value=1, max_value=100)):
-        if not interaction.channel or not isinstance(interaction.channel, TextChannel):
-            await interaction.response.send_message("Este comando só pode ser usado em um canal de texto.", ephemeral=True)
+    async def limpar(self, interaction: Interaction, 
+                     quantidade: int = SlashOption(description="Número de mensagens para limpar (1-100).", required=True, min_value=1, max_value=100),
+                     usuario: Optional[Member] = SlashOption(description="Limpar mensagens apenas deste usuário (opcional).", required=False)):
+        
+        if not isinstance(interaction.channel, TextChannel):
+            await self.send_error_embed(interaction, "Comando Inválido", "Este comando só pode ser usado em canais de texto.")
             return
-            
-        await interaction.response.defer(ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True) # Deferir para dar tempo de deletar
+
+        check_func = (lambda m: m.author == usuario) if usuario else None
+        
         try:
-            deleted_messages = await interaction.channel.purge(limit=quantidade)
-            await interaction.followup.send(f"{get_emoji(self.bot, 'trash')} {len(deleted_messages)} mensagens foram limpas!", ephemeral=True)
+            deleted_messages = await interaction.channel.purge(limit=quantidade, check=check_func)
+            msg_suffix = "mensagem" if len(deleted_messages) == 1 else "mensagens"
+            user_suffix = f" de {usuario.mention}" if usuario else ""
+            await interaction.followup.send(f"{get_emoji(self.bot, 'trash')} {len(deleted_messages)} {msg_suffix}{user_suffix} foram limpas com sucesso!", ephemeral=True)
+        except Forbidden:
+            await self.send_error_embed(interaction, "Permissão Negada", "Não tenho permissão para limpar mensagens neste canal.")
+        except HTTPException as e:
+            await self.send_error_embed(interaction, "Erro de API", f"Ocorreu um erro ao tentar limpar mensagens: {e}")
         except Exception as e:
-            await interaction.followup.send(f"{get_emoji(self.bot, 'sad')} Erro ao limpar mensagens: {e}", ephemeral=True)
-            print(f"[ERRO LIMPAR] {e}")
+            await self.send_error_embed(interaction, "Erro Inesperado", f"Ocorreu um erro: {e}")
+            print(f"[ERRO LIMPAR] Erro ao limpar mensagens: {e}")
+            traceback.print_exc()
 
-    @nextcord.slash_command(name="ajuda", description="Mostra a lista de comandos e como usá-los.")
-    async def ajuda(self, interaction: Interaction):
-        view = HelpView(self.bot, initial_interaction=interaction)
-        initial_embed = await view._get_cog_help_embed("help_home")
-        await interaction.response.send_message(embed=initial_embed, view=view)
+    @nextcord.slash_command(name="kick", description="Expulsa um usuário do servidor.", guild_ids=[SERVER_ID])
+    @application_checks.has_permissions(kick_members=True)
+    @application_checks.bot_has_permissions(kick_members=True)
+    async def kick(self, interaction: Interaction, 
+                   usuario: Member = SlashOption(description="Usuário a ser expulso.", required=True),
+                   motivo: Optional[str] = SlashOption(description="Motivo da expulsão (opcional).", required=False)):
+        
+        if usuario == interaction.user:
+            await self.send_error_embed(interaction, "Ação Inválida", "Você não pode se expulsar.")
+            return
+        if usuario == self.bot.user:
+            await self.send_error_embed(interaction, "Ação Inválida", "Eu não posso me expulsar.")
+            return
+        if usuario.top_role >= interaction.user.top_role and interaction.guild.owner != interaction.user:
+            await self.send_error_embed(interaction, "Hierarquia Inválida", "Você não pode expulsar um usuário com cargo igual ou superior ao seu.")
+            return
+        if usuario.top_role >= interaction.guild.me.top_role:
+            await self.send_error_embed(interaction, "Hierarquia Inválida (Bot)", "Não posso expulsar um usuário com cargo igual ou superior ao meu.")
+            return
 
-def setup(bot: commands.Bot):
+        view = ConfirmModerationView(self.bot, "kick", usuario, interaction.user, motivo)
+        embed = Embed(title=f"🔨 Confirmar Expulsão de {usuario.name}", 
+                      description=f"Você tem certeza que deseja expulsar {usuario.mention}?\n**Motivo:** {motivo or 'Não especificado'}", 
+                      color=Color.orange())
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        view.message = await interaction.original_message()
+
+    @nextcord.slash_command(name="ban", description="Bane um usuário do servidor.", guild_ids=[SERVER_ID])
+    @application_checks.has_permissions(ban_members=True)
+    @application_checks.bot_has_permissions(ban_members=True)
+    async def ban(self, interaction: Interaction, 
+                  usuario: Member = SlashOption(description="Usuário a ser banido.", required=True),
+                  motivo: Optional[str] = SlashOption(description="Motivo do banimento (opcional).", required=False),
+                  delete_days: Optional[int] = SlashOption(description="Número de dias de mensagens do usuário para deletar (0-7, padrão 0).", required=False, default=0, min_value=0, max_value=7)):
+
+        if usuario == interaction.user:
+            await self.send_error_embed(interaction, "Ação Inválida", "Você não pode se banir.")
+            return
+        if usuario == self.bot.user:
+            await self.send_error_embed(interaction, "Ação Inválida", "Eu não posso me banir.")
+            return
+        if usuario.top_role >= interaction.user.top_role and interaction.guild.owner != interaction.user:
+            await self.send_error_embed(interaction, "Hierarquia Inválida", "Você não pode banir um usuário com cargo igual ou superior ao seu.")
+            return
+        if usuario.top_role >= interaction.guild.me.top_role:
+            await self.send_error_embed(interaction, "Hierarquia Inválida (Bot)", "Não posso banir um usuário com cargo igual ou superior ao meu.")
+            return
+
+        view = ConfirmModerationView(self.bot, "ban", usuario, interaction.user, motivo, delete_days)
+        embed = Embed(title=f"🔨 Confirmar Banimento de {usuario.name}", 
+                      description=f"Você tem certeza que deseja banir {usuario.mention}?\n**Motivo:** {motivo or 'Não especificado'}\n**Deletar mensagens dos últimos:** {delete_days} dias", 
+                      color=Color.red())
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        view.message = await interaction.original_message()
+
+    @nextcord.slash_command(name="unban", description="Desbane um usuário do servidor.", guild_ids=[SERVER_ID])
+    @application_checks.has_permissions(ban_members=True)
+    @application_checks.bot_has_permissions(ban_members=True)
+    async def unban(self, interaction: Interaction, 
+                    user_id: str = SlashOption(description="ID do usuário a ser desbanido.", required=True),
+                    motivo: Optional[str] = SlashOption(description="Motivo do desbanimento (opcional).", required=False)):
+        try:
+            user_id_int = int(user_id)
+            banned_user = await self.bot.fetch_user(user_id_int)
+        except ValueError:
+            await self.send_error_embed(interaction, "ID Inválido", "O ID fornecido não é um número válido.")
+            return
+        except NotFound:
+            await self.send_error_embed(interaction, "Usuário Não Encontrado", f"Não foi possível encontrar um usuário com o ID `{user_id}`.")
+            return
+        except Exception as e:
+            await self.send_error_embed(interaction, "Erro ao Buscar Usuário", f"Ocorreu um erro: {e}")
+            return
+
+        try:
+            # Verificar se o usuário está realmente banido
+            await interaction.guild.fetch_ban(banned_user)
+        except NotFound:
+            await self.send_error_embed(interaction, "Usuário Não Banido", f"{banned_user.mention} (`{banned_user.id}`) não está banido deste servidor.")
+            return
+        except Forbidden:
+            await self.send_error_embed(interaction, "Permissão Negada", "Não tenho permissão para verificar a lista de banidos.")
+            return
+        except HTTPException as e:
+            await self.send_error_embed(interaction, "Erro de API", f"Erro ao verificar banimento: {e}")
+            return
+
+        try:
+            mod_reason = f"{motivo or 'Não especificado'} (Moderador: {interaction.user.name}#{interaction.user.discriminator} [{interaction.user.id}])"
+            await interaction.guild.unban(banned_user, reason=mod_reason)
+            await self.send_success_embed(interaction, "Usuário Desbanido", f"{banned_user.mention} (`{banned_user.id}`) foi desbanido com sucesso.")
+            
+            # Log de desbanimento (se configurado)
+            if MOD_LOG_CHANNEL_ID and interaction.guild:
+                log_channel = interaction.guild.get_channel(MOD_LOG_CHANNEL_ID)
+                if log_channel and isinstance(log_channel, TextChannel):
+                    log_embed = Embed(
+                        title=f"{get_emoji(self.bot, 'happy_flower')} Usuário Desbanido: {banned_user.name}",
+                        description=f"**Usuário:** {banned_user.mention} (`{banned_user.id}`)\n**Moderador:** {interaction.user.mention}\n**Motivo:** {motivo or 'Não especificado'}",
+                        color=Color.green(),
+                        timestamp=datetime.now(timezone.utc)
+                    )
+                    try:
+                        await log_channel.send(embed=log_embed)
+                    except Exception as e_log:
+                        print(f"[ERRO MODLOG UNBAN] Erro ao enviar log de desbanimento: {e_log}")
+
+        except Forbidden:
+            await self.send_error_embed(interaction, "Permissão Negada", f"Não tenho permissão para desbanir usuários. Verifique minhas permissões.")
+        except HTTPException as e:
+            await self.send_error_embed(interaction, "Erro de API", f"Ocorreu um erro ao tentar desbanir {banned_user.mention}: {e}")
+        except Exception as e:
+            await self.send_error_embed(interaction, "Erro Inesperado", f"Ocorreu um erro ao tentar desbanir {banned_user.mention}: {e}")
+            print(f"[ERRO UNBAN] Erro ao desbanir {banned_user.id}: {e}")
+            traceback.print_exc()
+
+    # TODO: Comandos de Mute e Unmute (requerem mais lógica, como gerenciamento de cargo ou uso de timeout do Discord)
+    # @nextcord.slash_command(name="mute", description="Silencia um usuário no servidor.")
+    # @application_checks.has_permissions(manage_roles=True) # ou moderate_members para timeout
+    # @application_checks.bot_has_permissions(manage_roles=True) # ou moderate_members
+    # async def mute(self, interaction: Interaction, usuario: Member, duracao: Optional[str] = None, motivo: Optional[str] = None):
+    #     pass
+
+    # @nextcord.slash_command(name="unmute", description="Remove o silenciamento de um usuário.")
+    # @application_checks.has_permissions(manage_roles=True)
+    # @application_checks.bot_has_permissions(manage_roles=True)
+    # async def unmute(self, interaction: Interaction, usuario: Member, motivo: Optional[str] = None):
+    #     pass
+
+    # Listener para erros de comando de aplicação
+    @commands.Cog.listener()
+    async def on_application_command_error(self, interaction: Interaction, error: Exception):
+        # Tratar erros comuns de checagem
+        if isinstance(error, application_checks.ApplicationMissingPermissions):
+            perms_faltantes = ", ".join([f"`{perm.replace('_', ' ').title()}`" for perm in error.missing_permissions])
+            await self.send_error_embed(interaction, "Permissão Faltando (Você)", f"Você não tem as seguintes permissões para usar este comando: {perms_faltantes}")
+            return
+        elif isinstance(error, application_checks.ApplicationBotMissingPermissions):
+            perms_faltantes = ", ".join([f"`{perm.replace('_', ' ').title()}`" for perm in error.missing_permissions])
+            await self.send_error_embed(interaction, "Permissão Faltando (Eu)", f"Eu não tenho as seguintes permissões para executar este comando: {perms_faltantes}")
+            return
+        elif isinstance(error, application_checks.ApplicationNotOwner):
+            await self.send_error_embed(interaction, "Comando Restrito", "Apenas o dono do bot pode usar este comando.")
+            return
+        elif isinstance(error, application_checks.ApplicationGuildOnly):
+            await self.send_error_embed(interaction, "Comando de Servidor", "Este comando só pode ser usado dentro de um servidor.")
+            return
+        elif isinstance(error, application_checks.ApplicationNSFWChannelRequired):
+            await self.send_error_embed(interaction, "Canal NSFW Requerido", "Este comando só pode ser usado em um canal marcado como NSFW.")
+            return
+        elif isinstance(error, application_checks.ApplicationCooldown): # Erro de cooldown para comandos de app
+            retry_after_formatted = str(timedelta(seconds=int(error.retry_after))).split('.')[0] # Formata para HH:MM:SS
+            await self.send_error_embed(interaction, "Comando em Cooldown", f"Este comando está em cooldown. Tente novamente em **{retry_after_formatted}**.")
+            return
+        
+        # Erros mais genéricos ou inesperados
+        # Se a interação já foi respondida (ex: por um defer), usa followup
+        # Caso contrário, tenta responder diretamente.
+        
+        # Logar o erro completo no console para o desenvolvedor
+        print(f'[{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}] [ERRO CMD APP] Ignorando exceção no comando de aplicação {interaction.application_command.qualified_name if interaction.application_command else "desconhecido"}:')
+        traceback.print_exception(type(error), error, error.__traceback__)
+
+        # Enviar uma mensagem de erro genérica para o usuário
+        error_message = f"Ocorreu um erro ao executar o comando `{interaction.application_command.qualified_name if interaction.application_command else "desconhecido"}`.\nJá notifiquei meu mestre sobre isso! {get_emoji(self.bot, 'sad')}"
+        
+        # Tentar notificar o desenvolvedor via DM
+        try:
+            dev_user = await self.bot.fetch_user(DEVELOPER_ID)
+            if dev_user:
+                error_details = f"Erro no comando `/{interaction.application_command.qualified_name if interaction.application_command else "desconhecido"}`:\n" \
+                                f"Usuário: {interaction.user} ({interaction.user.id})\n" \
+                                f"Servidor: {interaction.guild.name if interaction.guild else 'DM'} ({interaction.guild_id if interaction.guild else 'N/A'})\n" \
+                                f"Erro: ```{type(error).__name__}: {str(error)}```"
+                if len(error_details) > 1900: error_details = error_details[:1900] + "... (truncado)"
+                await dev_user.send(error_details)
+        except Exception as e_dev_dm:
+            print(f"[WARN ERRO CMD APP] Falha ao enviar DM de erro para o desenvolvedor: {e_dev_dm}")
+
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(error_message, ephemeral=True)
+            else:
+                await interaction.response.send_message(error_message, ephemeral=True)
+        except Exception as e_resp:
+            print(f"[WARN ERRO CMD APP] Falha ao enviar mensagem de erro para o usuário: {e_resp}")
+
+
+def setup(bot):
     bot.add_cog(Comandos(bot))
