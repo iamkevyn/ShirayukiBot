@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "jsbot"
+name = "shirayukiBOT"
 version = "0.1.0"
 description = "Bot Discord com Nextcord e Wavelink"
 authors = ["iamkevyn <seu@email.com>"]
