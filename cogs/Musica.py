@@ -215,7 +215,7 @@ class Musica(commands.Cog):
                 queue_display.append(f"{i+1}. {item.title} ({self.format_duration(item.length)})")
         
         embed.add_field(name=f"Próximas na Fila ({len(player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
-        embed.set_footer(text=f"Adicionado por: {current_track.requester.display_name if current_track.requester else \"Desconhecido\"}", icon_url=current_track.requester.display_avatar.url if current_track.requester else self.bot.user.display_avatar.url)
+       embed.set_footer(text=f"Adicionado por: {current_track.requester.display_name if current_track.requester else 'Desconhecido'}", icon_url=current_track.requester.display_avatar.url if current_track.requester else self.bot.user.display_avatar.url)
 
         await message.edit(content=None, embed=embed, view=PlayerControls(player, self))
 
