@@ -47,7 +47,7 @@ class MusicBot(commands.Bot):
         logger.info("--- [DIAGNÓSTICO MAFIC] __init__ da classe MusicBot concluído ---")
 
     async def setup_hook(self) -> None:
-        print("DEBUG: DENTRO DO SETUP_HOOK - LINHA INICIAL ANTES DE TUDO") # Nova linha de print adicionada
+        logger.critical("CRITICAL DEBUG: DENTRO DO SETUP_HOOK - LINHA INICIAL ANTES DE TUDO") # MODIFICADO DE PRINT PARA LOGGER.CRITICAL
         logger.info("--- [DIAGNÓSTICO] Iniciando setup_hook (Mafic temporariamente desativado para teste) ---") # Log ajustado
         try:
             # logger.info(f"--- [DIAGNÓSTICO MAFIC] Verificando Mafic: Versão {mafic.__version__}")
