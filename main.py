@@ -11,8 +11,9 @@ from keep_alive import keep_alive
 
 print(f"--- VERSÃO DO NEXTCORD: {nextcord.__version__} ---")
 
-logging.basicConfig(level=logging.INFO, format=\'%(asctime)s:%(levelname)s:%(name)s: %(message)s\')
-logger = logging.getLogger(\'discord_bot\')
+# CORREÇÃO: Removidas barras invertidas desnecessárias das aspas
+logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)s:%(name)s: %(message)s')
+logger = logging.getLogger('discord_bot')
 
 logger.info("--- Iniciando Bot (com Mafic, Logging Detalhado e Inspeção de Cog) ---")
 
@@ -82,7 +83,8 @@ class MusicBot(commands.Bot):
         cog_files = []
 
         if not os.path.isdir(cogs_dir):
-            logger.warning(f"⚠️ Diretório \'{cogs_dir}\' não encontrado. Nenhum cog será carregado.")
+            # CORREÇÃO: Removidas barras invertidas desnecessárias das aspas
+            logger.warning(f"⚠️ Diretório '{cogs_dir}' não encontrado. Nenhum cog será carregado.")
             return
 
         for filename in os.listdir(cogs_dir):
@@ -104,15 +106,14 @@ class MusicBot(commands.Bot):
         loaded_extensions = list(self.extensions.keys())
         logger.info(f"\n=== RESUMO DO CARREGAMENTO DE COGS ===")
         logger.info(f"-> Total de cogs encontrados: {len(cog_files)}")
-        logger.info(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {", ".join(cogs_loaded) if cogs_loaded else \'Nenhum\'}")
-        logger.info(f"-> Cogs que falharam ({len(cogs_failed)}): {", ".join(cogs_failed) if cogs_failed else \'Nenhum\'}")
-        logger.info(f"-> Extensões ativas ({len(loaded_extensions)}): {", ".join(loaded_extensions) if loaded_extensions else \'Nenhuma\'}")
+        # CORREÇÃO: Removidas barras invertidas desnecessárias das aspas
+        logger.info(f"-> Cogs carregados com sucesso ({len(cogs_loaded)}): {', '.join(cogs_loaded) if cogs_loaded else 'Nenhum'}")
+        logger.info(f"-> Cogs que falharam ({len(cogs_failed)}): {', '.join(cogs_failed) if cogs_failed else 'Nenhum'}")
+        logger.info(f"-> Extensões ativas ({len(loaded_extensions)}): {', '.join(loaded_extensions) if loaded_extensions else 'Nenhuma'}")
         logger.info("=== FIM DO RESUMO ===\n")
 
 bot = MusicBot(command_prefix="!", intents=intents)
 logger.info("-> Instância de MusicBot criada.")
-
-# Removida a chamada manual de asyncio.run(bot.setup_hook()) daqui
 
 @bot.slash_command(name="testemainslash", description="Um comando de teste simples no main.py")
 async def teste_main_slash(interaction: Interaction):
@@ -122,11 +123,10 @@ async def teste_main_slash(interaction: Interaction):
 
 @bot.event
 async def on_ready():
-    # Chamada do setup_hook dentro do on_ready, controlada por flag
     if not bot._setup_hook_done:
         logger.info("--- [DIAGNÓSTICO ON_READY] _setup_hook_done é False. Chamando setup_hook manualmente... ---")
         try:
-            await bot.setup_hook() # Chama o setup_hook da instância do bot
+            await bot.setup_hook()
             bot._setup_hook_done = True
             logger.info("--- [DIAGNÓSTICO ON_READY] Chamada manual de setup_hook concluída e _setup_hook_done definido como True. ---")
         except Exception as e_setup:
@@ -140,7 +140,8 @@ async def on_ready():
     if all_app_cmds_on_ready:
         logger.info(f"Total de comandos de aplicação detectados GLOBALMENTE NO BOT (on_ready): {len(all_app_cmds_on_ready)}")
         for cmd in all_app_cmds_on_ready:
-            logger.info(f"  -> Comando Global (on_ready): \'{cmd.qualified_name}\', Tipo: {type(cmd)}, Guild IDs: {cmd.guild_ids}, Descrição: {cmd.description}")
+            # CORREÇÃO: Removidas barras invertidas desnecessárias das aspas
+            logger.info(f"  -> Comando Global (on_ready): '{cmd.qualified_name}', Tipo: {type(cmd)}, Guild IDs: {cmd.guild_ids}, Descrição: {cmd.description}")
     else:
         logger.warning("Nenhum comando de aplicação detectado GLOBALMENTE NO BOT (on_ready) antes da sincronização.")
 
@@ -150,7 +151,8 @@ async def on_ready():
         if synced_global is not None:
             logger.info(f"🔄 Comandos slash sincronizados/enviados para registro GLOBAL: {len(synced_global)} comandos.")
             for s_cmd in synced_global:
-                logger.info(f"    Synced Global: \'{s_cmd.name}\', ID: {s_cmd.id}, Guild ID: {s_cmd.guild_id}")
+                # CORREÇÃO: Removidas barras invertidas desnecessárias das aspas
+                logger.info(f"    Synced Global: '{s_cmd.name}', ID: {s_cmd.id}, Guild ID: {s_cmd.guild_id}")
         else:
             logger.warning("⚠️ A sincronização GLOBAL retornou None.")
 
