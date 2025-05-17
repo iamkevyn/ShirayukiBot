@@ -571,7 +571,7 @@ class Musica(commands.Cog):
         await self.update_now_playing_message(player)
 
     # Eventos Mafic
-    @commands.Cog.listener()
+    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
     async def on_mafic_track_start(self, player: mafic.Player, track: mafic.Track):
         """Evento disparado quando uma faixa começa a tocar."""
         if not player.guild:
@@ -658,7 +658,7 @@ class Musica(commands.Cog):
             except Exception as e:
                 logger.error(f"Erro ao criar mensagem 'agora tocando' para guild {player.guild.id}: {e}")
 
-    @commands.Cog.listener()
+    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
     async def on_mafic_track_end(self, player: mafic.Player, track: mafic.Track, reason: str):
         """Evento disparado quando uma faixa termina de tocar."""
         logger.info(f"Faixa terminada: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Razão: {reason}")
@@ -674,7 +674,7 @@ class Musica(commands.Cog):
             except Exception as e:
                 logger.error(f"Erro ao atualizar mensagem 'agora tocando' após fim da fila para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
 
-    @commands.Cog.listener()
+    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
     async def on_mafic_track_exception(self, player: mafic.Player, track: mafic.Track, exception: Exception):
         """Evento disparado quando ocorre um erro ao tocar uma faixa."""
         logger.error(f"Erro ao tocar faixa: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Erro: {exception}")
@@ -689,7 +689,7 @@ class Musica(commands.Cog):
             except Exception as e:
                 logger.error(f"Erro ao enviar notificação de erro para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
 
-    @commands.Cog.listener()
+    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
     async def on_mafic_track_stuck(self, player: mafic.Player, track: mafic.Track, threshold_ms: int):
         """Evento disparado quando uma faixa fica presa (não avança)."""
         logger.warning(f"Faixa presa: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Threshold: {threshold_ms}ms")
@@ -710,7 +710,7 @@ class Musica(commands.Cog):
         except Exception as e:
             logger.error(f"Erro ao tentar pular faixa presa: {e}")
 
-    @commands.Cog.listener()
+    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
     async def on_voice_state_update(self, member: nextcord.Member, before: nextcord.VoiceState, after: nextcord.VoiceState):
         """Evento disparado quando o estado de voz de um membro muda."""
         # Ignora se não for o bot
@@ -751,7 +751,7 @@ class Musica(commands.Cog):
                     logger.error(f"Erro ao limpar player após desconexão para guild {member.guild.id}: {e}")
 
     # Tratamento de erros para comandos de aplicação
-    @nextcord.Cog.listener()
+    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
     async def on_application_command_error(self, interaction: Interaction, error):
         # Verifica se o erro é de um comando desta cog
         if hasattr(interaction, 'application_command'):
