@@ -1,5 +1,6 @@
 # /home/ubuntu/ShirayukiBot/cogs/Musica.py
 # Cog de Música reescrita para usar Mafic
+
 import nextcord
 from nextcord import Interaction, SlashOption, ChannelType
 from nextcord.ext import commands
@@ -57,7 +58,11 @@ class PlayerControls(nextcord.ui.View):
 
         self.player.queue.clear()
         await self.player.stop() # Para a música atual
-        await self.player.disconnect(force=True) # Desconecta do canal de voz
+        
+        try:
+            await self.player.disconnect(force=True) # Desconecta do canal de voz
+        except Exception as e:
+            logger.error(f"Erro ao desconectar player para guild {interaction.guild_id}: {e}")
 
         # Remove o player da lista do cog
         if interaction.guild_id in self.cog.players:
@@ -177,70 +182,82 @@ class Musica(commands.Cog):
         """Comando para tocar música."""
         await interaction.response.defer(ephemeral=False) # Deferir para dar tempo de processar
 
-        player = await self.get_player(interaction)
-        if not player:
-            # get_player já envia mensagem de erro, então não precisa enviar outra aqui
-            # Apenas verificamos se a interação já foi respondida para evitar erro.
-            if not interaction.response.is_done():
-                 await interaction.followup.send("Não foi possível obter o player de música.", ephemeral=True)
-            return
+        try:
+            player = await self.get_player(interaction)
+            if not player:
+                # get_player já envia mensagem de erro, então não precisa enviar outra aqui
+                # Apenas verificamos se a interação já foi respondida para evitar erro.
+                if not interaction.response.is_done():
+                    await interaction.followup.send("Não foi possível obter o player de música.", ephemeral=True)
+                return
 
-        # Verifica se é uma URL válida ou um termo de busca
-        is_url = bool(URL_REGEX.match(busca))
-        is_search_term = bool(SEARCH_TERM_REGEX.match(busca)) and not is_url
+            # Verifica se é uma URL válida ou um termo de busca
+            is_url = bool(URL_REGEX.match(busca))
+            is_search_term = bool(SEARCH_TERM_REGEX.match(busca)) and not is_url
 
-        tracks: Union[mafic.Playlist, List[mafic.Track], None] = None
-        source_type = mafic.Source.YOUTUBE # Padrão para busca
+            tracks: Union[mafic.Playlist, List[mafic.Track], None] = None
+            source_type = mafic.Source.YOUTUBE # Padrão para busca
 
-        if is_url:
-            logger.info(f"Buscando por URL: {busca} para guild {interaction.guild_id}")
-            if "soundcloud.com" in busca:
-                source_type = mafic.Source.SOUNDCLOUD
-            # Para URLs, incluindo playlists, fetch_tracks é geralmente o melhor
-            tracks = await player.fetch_tracks(busca, source_type=None) # Deixa Mafic decidir a fonte pela URL
-        elif is_search_term:
-            logger.info(f"Buscando por termo: {busca} para guild {interaction.guild_id}")
-            # Para termos de busca, usamos search_tracks e especificamos a fonte (ou deixamos padrão)
-            tracks = await player.search_tracks(query=busca, source=source_type) 
-        else:
-            await interaction.followup.send("Entrada inválida. Por favor, forneça uma URL válida (YouTube/SoundCloud) ou um termo de busca (3-500 caracteres).", ephemeral=True)
-            return
+            if is_url:
+                logger.info(f"Buscando por URL: {busca} para guild {interaction.guild_id}")
+                if "soundcloud.com" in busca:
+                    source_type = mafic.Source.SOUNDCLOUD
+                # Para URLs, incluindo playlists, fetch_tracks é geralmente o melhor
+                tracks = await player.fetch_tracks(busca, source_type=None) # Deixa Mafic decidir a fonte pela URL
+            elif is_search_term:
+                logger.info(f"Buscando por termo: {busca} para guild {interaction.guild_id}")
+                # Para termos de busca, usamos search_tracks e especificamos a fonte (ou deixamos padrão)
+                tracks = await player.search_tracks(query=busca, source=source_type) 
+            else:
+                await interaction.followup.send("Entrada inválida. Por favor, forneça uma URL válida (YouTube/SoundCloud) ou um termo de busca (3-500 caracteres).", ephemeral=True)
+                return
 
-        if not tracks:
-            await interaction.followup.send(f"Nenhuma música encontrada para: `{busca}`", ephemeral=True)
-            return
+            if not tracks:
+                await interaction.followup.send(f"Nenhuma música encontrada para: `{busca}`", ephemeral=True)
+                return
 
-        added_to_queue_count = 0
-        first_track_title = ""
+            added_to_queue_count = 0
+            first_track_title = ""
 
-        if isinstance(tracks, mafic.Playlist):
-            player.queue.extend(tracks.tracks)
-            added_to_queue_count = len(tracks.tracks)
-            first_track_title = tracks.name # Nome da playlist
-            await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!", ephemeral=False)
-        elif isinstance(tracks, list) and tracks: # Lista de faixas (resultado de busca)
-            if is_search_term: # Se foi uma busca, geralmente pegamos a primeira e adicionamos
-                track_to_add = tracks[0]
-                player.queue.append(track_to_add)
-                added_to_queue_count = 1
-                first_track_title = track_to_add.title
-                await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!", ephemeral=False)
-            else: # Se foi uma URL de faixa única que retornou uma lista (improvável, mas para cobrir)
-                player.queue.extend(tracks)
-                added_to_queue_count = len(tracks)
-                first_track_title = tracks[0].title
-                await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!", ephemeral=False)
-        else:
-            await interaction.followup.send(f"Não foi possível processar o resultado para: `{busca}`", ephemeral=True)
-            return
+            if isinstance(tracks, mafic.Playlist):
+                player.queue.extend(tracks.tracks)
+                added_to_queue_count = len(tracks.tracks)
+                first_track_title = tracks.name # Nome da playlist
+                await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!", ephemeral=False)
+            elif isinstance(tracks, list) and tracks: # Lista de faixas (resultado de busca)
+                if is_search_term: # Se foi uma busca, geralmente pegamos a primeira e adicionamos
+                    track_to_add = tracks[0]
+                    player.queue.append(track_to_add)
+                    added_to_queue_count = 1
+                    first_track_title = track_to_add.title
+                    await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!", ephemeral=False)
+                else: # Se foi uma URL de faixa única que retornou uma lista (improvável, mas para cobrir)
+                    player.queue.extend(tracks)
+                    added_to_queue_count = len(tracks)
+                    first_track_title = tracks[0].title
+                    await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!", ephemeral=False)
+            else:
+                await interaction.followup.send(f"Não foi possível processar o resultado para: `{busca}`", ephemeral=True)
+                return
 
-        if not player.current and player.queue:
-            await player.play(player.queue.pop(0), start_time=0) # Inicia a primeira música da fila
-            # A mensagem de "agora tocando" será tratada por on_track_start
-        elif player.current and added_to_queue_count > 0:
-            # Se já está tocando e algo foi adicionado, a mensagem de "agora tocando" pode ser atualizada
-            # para refletir a fila, se a view estiver ativa.
-            await self.update_now_playing_message(player)
+            if not player.current and player.queue:
+                await player.play(player.queue.pop(0), start_time=0) # Inicia a primeira música da fila
+                # A mensagem de "agora tocando" será tratada por on_track_start
+            elif player.current and added_to_queue_count > 0:
+                # Se já está tocando e algo foi adicionado, a mensagem de "agora tocando" pode ser atualizada
+                # para refletir a fila, se a view estiver ativa.
+                await self.update_now_playing_message(player)
+        except mafic.errors.HTTPNotFound as e:
+            logger.error(f"Erro HTTP 404 do Lavalink: {e}")
+            await interaction.followup.send("Erro de conexão com o servidor de música. Tente novamente mais tarde.", ephemeral=True)
+        except nextcord.errors.InteractionResponded:
+            logger.warning("Interação já respondida durante o comando /tocar")
+        except Exception as e:
+            logger.error(f"Erro inesperado no comando /tocar: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(f"Ocorreu um erro inesperado: {e}", ephemeral=True)
+            except:
+                pass
 
     async def update_now_playing_message(self, player: mafic.Player):
         if not player.guild_id or not player.current:
@@ -290,9 +307,15 @@ class Musica(commands.Cog):
                 queue_display.append(f"{i+1}. {item.title} ({self.format_duration(item.length)})")
         
         embed.add_field(name=f"Próximas na Fila ({len(player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
-        embed.set_footer(text=f"Adicionado por: {current_track.requester.display_name if current_track.requester else 'Desconhecido'}", icon_url=current_track.requester.display_avatar.url if current_track.requester else self.bot.user.display_avatar.url)
+        
+        # Corrigido o problema de aspas na f-string
+        embed.set_footer(text=f"Adicionado por: {current_track.requester.display_name if current_track.requester else 'Desconhecido'}", 
+                         icon_url=current_track.requester.display_avatar.url if current_track.requester else self.bot.user.display_avatar.url)
 
-        await message.edit(content=None, embed=embed, view=PlayerControls(player, self))
+        try:
+            await message.edit(content=None, embed=embed, view=PlayerControls(player, self))
+        except Exception as e:
+            logger.error(f"Erro ao atualizar mensagem 'agora tocando' para guild {player.guild_id}: {e}")
 
     def format_duration(self, milliseconds: int) -> str:
         """Formata duração de milissegundos para HH:MM:SS ou MM:SS."""
@@ -304,131 +327,471 @@ class Musica(commands.Cog):
             return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         return f"{minutes:02d}:{seconds:02d}"
 
-    @commands.Cog.listener("on_mafic_track_start")
-    async def on_mafic_track_start(self, event: mafic.TrackStartEvent[mafic.Player]):
-        logger.info(f"TrackStartEvent: {event.track.title} iniciada em {event.player.guild_id}")
-        # Envia ou atualiza a mensagem "agora tocando"
-        channel = event.player.text_channel # O canal onde o comando /tocar foi usado (se foi armazenado no player)
-        
-        # Precisamos garantir que text_channel foi definido no player. 
-        # Isso geralmente é feito quando o player é criado ou o primeiro comando é usado.
-        # Se não foi, tentamos pegar o canal da interação original do /tocar, se disponível.
-        # No entanto, o evento não passa a interação original diretamente.
-        # Uma forma de contornar é armazenar o canal de texto no player quando o comando /tocar é usado.
-        # Vamos assumir que player.text_channel foi definido em algum lugar (ex: no comando /tocar)
-
-        if not channel and event.player.guild_id:
-            # Fallback: Tenta encontrar um canal de texto adequado no servidor se player.text_channel não estiver definido.
-            # Isso é um paliativo e pode não ser o canal ideal.
-            guild = self.bot.get_guild(event.player.guild_id)
-            if guild:
-                for ch in guild.text_channels:
-                    if ch.permissions_for(guild.me).send_messages:
-                        channel = ch
-                        logger.warning(f"Player.text_channel não definido para guild {event.player.guild_id}. Usando fallback: {ch.name}")
-                        break
-        
-        if not channel:
-            logger.error(f"Não foi possível determinar o canal de texto para enviar a mensagem 'agora tocando' para guild {event.player.guild_id}")
+    @nextcord.slash_command(name="fila", description="Mostra a fila de músicas atual.")
+    async def queue(self, interaction: Interaction):
+        """Comando para mostrar a fila de músicas."""
+        if not interaction.guild_id or interaction.guild_id not in self.players:
+            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
             return
 
-        current_track = event.track
+        player = self.players[interaction.guild_id]
+        if not player.connected:
+            await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
+            return
+
         embed = nextcord.Embed(
-            title=f"🎶 Tocando Agora", 
-            description=f"**[{current_track.title}]({current_track.uri})**", 
-            color=nextcord.Color.green()
+            title="🎵 Fila de Músicas",
+            color=nextcord.Color.blue()
         )
-        embed.add_field(name="Duração", value=self.format_duration(current_track.length), inline=True)
-        embed.add_field(name="Autor", value=current_track.author, inline=True)
+
+        # Informações da música atual
+        if player.current:
+            embed.add_field(
+                name="🎶 Tocando Agora",
+                value=f"**[{player.current.title}]({player.current.uri})** ({self.format_duration(player.current.length)})\n"
+                      f"Adicionado por: {player.current.requester.mention if player.current.requester else 'Desconhecido'}",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🎶 Tocando Agora",
+                value="Nada tocando no momento.",
+                inline=False
+            )
+
+        # Lista de músicas na fila
+        if player.queue:
+            queue_list = []
+            for i, track in enumerate(player.queue[:10]):  # Limita a 10 músicas para não sobrecarregar o embed
+                requester = track.requester.mention if track.requester else "Desconhecido"
+                queue_list.append(f"**{i+1}.** [{track.title}]({track.uri}) ({self.format_duration(track.length)}) - {requester}")
+            
+            remaining = len(player.queue) - 10
+            queue_text = "\n".join(queue_list)
+            if remaining > 0:
+                queue_text += f"\n\n*E mais {remaining} música(s)...*"
+            
+            embed.add_field(
+                name=f"📋 Próximas na Fila ({len(player.queue)})",
+                value=queue_text,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="📋 Próximas na Fila",
+                value="A fila está vazia. Adicione músicas com `/tocar`!",
+                inline=False
+            )
+
+        # Informações adicionais
+        loop_status = "Desativado"
+        if player.loop == mafic.LoopType.TRACK: loop_status = "Faixa Atual"
+        elif player.loop == mafic.LoopType.QUEUE: loop_status = "Fila Inteira"
+        
+        embed.add_field(name="🔁 Loop", value=loop_status, inline=True)
+        embed.add_field(name="🔊 Volume", value=f"{player.volume}%", inline=True)
+        
+        if player.paused:
+            embed.add_field(name="⏸️ Status", value="Pausado", inline=True)
+        else:
+            embed.add_field(name="▶️ Status", value="Tocando", inline=True)
+
+        await interaction.response.send_message(embed=embed)
+
+    @nextcord.slash_command(name="pular", description="Pula para a próxima música na fila.")
+    async def skip(self, interaction: Interaction):
+        """Comando para pular a música atual."""
+        if not interaction.guild_id or interaction.guild_id not in self.players:
+            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
+            return
+
+        player = self.players[interaction.guild_id]
+        if not player.connected or not player.current:
+            await interaction.response.send_message("Não há nada tocando para pular.", ephemeral=True)
+            return
+
+        await player.stop()  # Mafic lida com a próxima música da fila automaticamente
+        await interaction.response.send_message("⏭️ Música pulada!")
+        # A mensagem de "agora tocando" será atualizada pelo evento on_track_end/on_track_start
+
+    @nextcord.slash_command(name="pausar", description="Pausa a música atual.")
+    async def pause(self, interaction: Interaction):
+        """Comando para pausar a música atual."""
+        if not interaction.guild_id or interaction.guild_id not in self.players:
+            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
+            return
+
+        player = self.players[interaction.guild_id]
+        if not player.connected or not player.current:
+            await interaction.response.send_message("Não há nada tocando para pausar.", ephemeral=True)
+            return
+
+        if player.paused:
+            await interaction.response.send_message("A música já está pausada. Use `/continuar` para retomar.", ephemeral=True)
+            return
+
+        await player.pause()
+        await interaction.response.send_message("⏸️ Música pausada!")
+        await self.update_now_playing_message(player)
+
+    @nextcord.slash_command(name="continuar", description="Continua a música pausada.")
+    async def resume(self, interaction: Interaction):
+        """Comando para continuar a música pausada."""
+        if not interaction.guild_id or interaction.guild_id not in self.players:
+            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
+            return
+
+        player = self.players[interaction.guild_id]
+        if not player.connected or not player.current:
+            await interaction.response.send_message("Não há nada tocando para continuar.", ephemeral=True)
+            return
+
+        if not player.paused:
+            await interaction.response.send_message("A música já está tocando. Use `/pausar` para pausar.", ephemeral=True)
+            return
+
+        await player.resume()
+        await interaction.response.send_message("▶️ Música retomada!")
+        await self.update_now_playing_message(player)
+
+    @nextcord.slash_command(name="parar", description="Para a música e limpa a fila.")
+    async def stop(self, interaction: Interaction):
+        """Comando para parar a música e limpar a fila."""
+        if not interaction.guild_id or interaction.guild_id not in self.players:
+            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
+            return
+
+        player = self.players[interaction.guild_id]
+        if not player.connected:
+            await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
+            return
+
+        player.queue.clear()
+        await player.stop()  # Para a música atual
+        
+        try:
+            await player.disconnect(force=True)  # Desconecta do canal de voz
+        except Exception as e:
+            logger.error(f"Erro ao desconectar player para guild {interaction.guild_id}: {e}")
+
+        # Remove o player da lista do cog
+        del self.players[interaction.guild_id]
+
+        await interaction.response.send_message("⏹️ Player parado, fila limpa e bot desconectado.")
+
+        if self.now_playing_messages.get(interaction.guild_id):
+            try:
+                msg_id, channel_id = self.now_playing_messages[interaction.guild_id]
+                channel = self.bot.get_channel(channel_id)
+                if channel:
+                    message = await channel.fetch_message(msg_id)
+                    await message.edit(content="Player desconectado. Use `/tocar` para iniciar novamente.", view=None, embed=None)
+                del self.now_playing_messages[interaction.guild_id]
+            except nextcord.NotFound:
+                logger.warning(f"Mensagem 'agora tocando' não encontrada para guild {interaction.guild_id} ao parar.")
+            except Exception as e:
+                logger.error(f"Erro ao limpar mensagem 'agora tocando' para guild {interaction.guild_id}: {e}")
+
+    @nextcord.slash_command(name="volume", description="Ajusta o volume da música (0-100).")
+    async def volume(
+        self,
+        interaction: Interaction,
+        nivel: int = SlashOption(
+            name="nivel",
+            description="Nível de volume (0-100)",
+            required=True,
+            min_value=0,
+            max_value=100
+        )
+    ):
+        """Comando para ajustar o volume da música."""
+        if not interaction.guild_id or interaction.guild_id not in self.players:
+            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
+            return
+
+        player = self.players[interaction.guild_id]
+        if not player.connected:
+            await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
+            return
+
+        await player.set_volume(nivel)
+        await interaction.response.send_message(f"🔊 Volume ajustado para {nivel}%.")
+
+    @nextcord.slash_command(name="loop", description="Alterna entre modos de loop (desativado, faixa, fila).")
+    async def loop(
+        self,
+        interaction: Interaction,
+        modo: str = SlashOption(
+            name="modo",
+            description="Modo de loop",
+            required=True,
+            choices={"Desativado": "none", "Faixa Atual": "track", "Fila Inteira": "queue"}
+        )
+    ):
+        """Comando para alternar entre modos de loop."""
+        if not interaction.guild_id or interaction.guild_id not in self.players:
+            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
+            return
+
+        player = self.players[interaction.guild_id]
+        if not player.connected:
+            await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
+            return
+
+        if modo == "none":
+            player.loop = mafic.LoopType.NONE
+            await interaction.response.send_message("🔁 Loop desativado.")
+        elif modo == "track":
+            player.loop = mafic.LoopType.TRACK
+            await interaction.response.send_message("🔁 Loop da faixa atual ativado.")
+        elif modo == "queue":
+            player.loop = mafic.LoopType.QUEUE
+            await interaction.response.send_message("🔁 Loop da fila inteira ativado.")
+
+        await self.update_now_playing_message(player)
+
+    @nextcord.slash_command(name="shuffle", description="Embaralha a fila de músicas.")
+    async def shuffle(self, interaction: Interaction):
+        """Comando para embaralhar a fila de músicas."""
+        if not interaction.guild_id or interaction.guild_id not in self.players:
+            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
+            return
+
+        player = self.players[interaction.guild_id]
+        if not player.connected:
+            await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
+            return
+
+        if not player.queue:
+            await interaction.response.send_message("A fila está vazia para embaralhar.", ephemeral=True)
+            return
+
+        player.queue.shuffle()
+        await interaction.response.send_message("🔀 Fila embaralhada!")
+        await self.update_now_playing_message(player)
+
+    # Eventos Mafic
+    @commands.Cog.listener()
+    async def on_mafic_track_start(self, player: mafic.Player, track: mafic.Track):
+        """Evento disparado quando uma faixa começa a tocar."""
+        if not player.guild:
+            return
+
+        logger.info(f"Faixa iniciada: {track.title} em {player.guild.name} ({player.guild.id})")
+
+        # Cria ou atualiza a mensagem de "agora tocando"
+        embed = nextcord.Embed(
+            title=f"🎶 Tocando Agora",
+            description=f"**[{track.title}]({track.uri})**",
+            color=nextcord.Color.blue()
+        )
+        embed.add_field(name="Duração", value=self.format_duration(track.length), inline=True)
+        embed.add_field(name="Autor", value=track.author, inline=True)
         
         loop_status = "Desativado"
-        if event.player.loop == mafic.LoopType.TRACK: loop_status = "Faixa Atual"
-        elif event.player.loop == mafic.LoopType.QUEUE: loop_status = "Fila Inteira"
+        if player.loop == mafic.LoopType.TRACK: loop_status = "Faixa Atual"
+        elif player.loop == mafic.LoopType.QUEUE: loop_status = "Fila Inteira"
         embed.add_field(name="Loop", value=loop_status, inline=True)
 
-        if current_track.artwork_url:
-            embed.set_thumbnail(url=current_track.artwork_url)
-
+        if track.artwork_url:
+            embed.set_thumbnail(url=track.artwork_url)
+        
         queue_display = []
-        if event.player.queue:
-            for i, item in enumerate(event.player.queue[:5]):
+        if player.queue:
+            for i, item in enumerate(player.queue[:5]):  # Mostra as próximas 5
                 queue_display.append(f"{i+1}. {item.title} ({self.format_duration(item.length)})")
-        embed.add_field(name=f"Próximas na Fila ({len(event.player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
-        embed.set_footer(text=f"Adicionado por: {current_track.requester.display_name if current_track.requester else 'Desconhecido'}", icon_url=current_track.requester.display_avatar.url if current_track.requester else self.bot.user.display_avatar.url)
+        
+        embed.add_field(name=f"Próximas na Fila ({len(player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
+        
+        # Corrigido o problema de aspas na f-string
+        embed.set_footer(text=f"Adicionado por: {track.requester.display_name if track.requester else 'Desconhecido'}", 
+                         icon_url=track.requester.display_avatar.url if track.requester else self.bot.user.display_avatar.url)
 
-        # Verifica se já existe uma mensagem "agora tocando" para este servidor
-        existing_message_info = self.now_playing_messages.get(event.player.guild_id)
-        if existing_message_info:
-            msg_id, _ = existing_message_info
+        # Verifica se já existe uma mensagem de "agora tocando" para este servidor
+        if player.guild.id in self.now_playing_messages:
             try:
-                message = await channel.fetch_message(msg_id)
-                await message.edit(content=None, embed=embed, view=PlayerControls(event.player, self))
-                logger.info(f"Mensagem 'agora tocando' atualizada para {event.track.title} em guild {event.player.guild_id}")
-            except nextcord.NotFound:
-                logger.warning(f"Mensagem 'agora tocando' (ID: {msg_id}) não encontrada para guild {event.player.guild_id}. Criando uma nova.")
-                message = await channel.send(embed=embed, view=PlayerControls(event.player, self))
-                self.now_playing_messages[event.player.guild_id] = (message.id, channel.id)
-            except Exception as e:
-                logger.error(f"Erro ao editar mensagem 'agora tocando' para guild {event.player.guild_id}: {e}. Criando uma nova.")
-                message = await channel.send(embed=embed, view=PlayerControls(event.player, self))
-                self.now_playing_messages[event.player.guild_id] = (message.id, channel.id)
-        else:
-            message = await channel.send(embed=embed, view=PlayerControls(event.player, self))
-            self.now_playing_messages[event.player.guild_id] = (message.id, channel.id)
-            logger.info(f"Nova mensagem 'agora tocando' enviada para {event.track.title} em guild {event.player.guild_id}")
-
-    @commands.Cog.listener("on_mafic_track_end")
-    async def on_mafic_track_end(self, event: mafic.TrackEndEvent[mafic.Player]):
-        logger.info(f"TrackEndEvent: {event.track.title} finalizada em {event.player.guild_id}. Razão: {event.reason}")
-        # Se não houver loop da fila e a fila estiver vazia, ou se o player foi parado manualmente
-        if (event.player.loop != mafic.LoopType.QUEUE and not event.player.queue) or event.reason == mafic.TrackEndReason.STOPPED:
-            if event.player.guild_id in self.now_playing_messages:
-                msg_id, channel_id = self.now_playing_messages[event.player.guild_id]
+                msg_id, channel_id = self.now_playing_messages[player.guild.id]
                 channel = self.bot.get_channel(channel_id)
                 if channel:
                     try:
                         message = await channel.fetch_message(msg_id)
-                        await message.edit(content="Fila terminada ou player parado. Use `/tocar` para adicionar mais músicas.", embed=None, view=None)
-                        del self.now_playing_messages[event.player.guild_id]
-                        logger.info(f"Mensagem 'agora tocando' limpa para guild {event.player.guild_id} após fim da fila/parada.")
+                        await message.edit(content=None, embed=embed, view=PlayerControls(player, self))
+                        return
                     except nextcord.NotFound:
-                        logger.warning(f"Mensagem 'agora tocando' não encontrada para limpar em guild {event.player.guild_id}")
+                        # Mensagem não encontrada, vamos criar uma nova
+                        pass
                     except Exception as e:
-                        logger.error(f"Erro ao limpar mensagem 'agora tocando' em guild {event.player.guild_id}: {e}")
+                        logger.error(f"Erro ao editar mensagem 'agora tocando' para guild {player.guild.id}: {e}")
+            except Exception as e:
+                logger.error(f"Erro ao processar mensagem 'agora tocando' existente para guild {player.guild.id}: {e}")
+
+        # Se chegou aqui, precisamos criar uma nova mensagem
+        # Encontra o canal de texto mais adequado para enviar a mensagem
+        text_channel = None
+        
+        # Tenta encontrar o canal onde o comando foi executado
+        if track.requester and isinstance(track.requester, nextcord.Member):
+            for channel in player.guild.text_channels:
+                if channel.permissions_for(player.guild.me).send_messages and channel.permissions_for(track.requester).read_messages:
+                    text_channel = channel
+                    break
+        
+        # Se não encontrou, tenta o canal geral ou o primeiro canal disponível
+        if not text_channel:
+            for channel in player.guild.text_channels:
+                if channel.permissions_for(player.guild.me).send_messages:
+                    if channel.name.lower() in ["geral", "general", "chat", "música", "music"]:
+                        text_channel = channel
+                        break
             
-            # Se o player foi parado (não apenas fim da faixa e fila vazia), desconecte
-            if event.reason == mafic.TrackEndReason.STOPPED and event.player.connected:
-                 # Não desconectar aqui, pois o stop_clear já faz isso. 
-                 # Apenas garante que a mensagem seja limpa.
-                 pass
+            if not text_channel:
+                for channel in player.guild.text_channels:
+                    if channel.permissions_for(player.guild.me).send_messages:
+                        text_channel = channel
+                        break
+        
+        if text_channel:
+            try:
+                message = await text_channel.send(embed=embed, view=PlayerControls(player, self))
+                self.now_playing_messages[player.guild.id] = (message.id, text_channel.id)
+                logger.info(f"Nova mensagem 'agora tocando' criada para guild {player.guild.id} no canal {text_channel.name}")
+            except Exception as e:
+                logger.error(f"Erro ao criar mensagem 'agora tocando' para guild {player.guild.id}: {e}")
 
-        # Mafic lida com a próxima música automaticamente se houver algo na fila e o loop não for apenas da faixa.
-        # O evento on_track_start cuidará da nova mensagem "agora tocando".
+    @commands.Cog.listener()
+    async def on_mafic_track_end(self, player: mafic.Player, track: mafic.Track, reason: str):
+        """Evento disparado quando uma faixa termina de tocar."""
+        logger.info(f"Faixa terminada: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Razão: {reason}")
+        
+        # Se a fila estiver vazia e não houver mais nada tocando, podemos limpar a mensagem de "agora tocando"
+        if not player.queue and not player.current and player.guild and player.guild.id in self.now_playing_messages:
+            try:
+                msg_id, channel_id = self.now_playing_messages[player.guild.id]
+                channel = self.bot.get_channel(channel_id)
+                if channel:
+                    message = await channel.fetch_message(msg_id)
+                    await message.edit(content="Fila vazia. Use `/tocar` para adicionar mais músicas!", embed=None, view=None)
+            except Exception as e:
+                logger.error(f"Erro ao atualizar mensagem 'agora tocando' após fim da fila para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
 
-    @commands.Cog.listener("on_mafic_track_exception")
-    async def on_mafic_track_exception(self, event: mafic.TrackExceptionEvent[mafic.Player]):
-        logger.error(f"TrackExceptionEvent: Erro ao tocar {event.track.title} em {event.player.guild_id}. Detalhes: {event.exception}")
-        if event.player.text_channel:
-            await event.player.text_channel.send(f"❌ Erro ao tocar **{event.track.title}**: `{event.exception.message}`")
-        # Pode ser útil pular para a próxima música ou limpar o player dependendo da severidade.
+    @commands.Cog.listener()
+    async def on_mafic_track_exception(self, player: mafic.Player, track: mafic.Track, exception: Exception):
+        """Evento disparado quando ocorre um erro ao tocar uma faixa."""
+        logger.error(f"Erro ao tocar faixa: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Erro: {exception}")
+        
+        # Tenta notificar no canal onde a mensagem de "agora tocando" está
+        if player.guild and player.guild.id in self.now_playing_messages:
+            try:
+                msg_id, channel_id = self.now_playing_messages[player.guild.id]
+                channel = self.bot.get_channel(channel_id)
+                if channel:
+                    await channel.send(f"❌ Erro ao tocar **{track.title}**: {exception}")
+            except Exception as e:
+                logger.error(f"Erro ao enviar notificação de erro para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
 
-    @commands.Cog.listener("on_mafic_websocket_closed")
-    async def on_mafic_websocket_closed(self, event: mafic.WebSocketClosedEvent):
-        logger.error(f"WebSocketClosedEvent: Conexão com Lavalink fechada para Node {event.node.label}. Código: {event.code}, Razão: {event.reason}, Guild ID: {event.guild_id}")
-        # Tentar reconectar ou notificar o usuário pode ser necessário aqui.
-        # Se event.guild_id estiver presente, significa que um player específico foi afetado.
-        if event.guild_id and event.guild_id in self.players:
-            player = self.players[event.guild_id]
-            if player.text_channel:
-                await player.text_channel.send(f"⚠️ Conexão com o servidor de música perdida (WebSocket fechado). Tentando reconectar em breve ou use `/tocar` novamente.")
-            # Poderia tentar player.destroy() ou uma lógica de reconexão mais robusta.
+    @commands.Cog.listener()
+    async def on_mafic_track_stuck(self, player: mafic.Player, track: mafic.Track, threshold_ms: int):
+        """Evento disparado quando uma faixa fica presa (não avança)."""
+        logger.warning(f"Faixa presa: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Threshold: {threshold_ms}ms")
+        
+        # Tenta pular a faixa presa
+        try:
+            await player.stop()
+            
+            # Notifica no canal onde a mensagem de "agora tocando" está
+            if player.guild and player.guild.id in self.now_playing_messages:
+                try:
+                    msg_id, channel_id = self.now_playing_messages[player.guild.id]
+                    channel = self.bot.get_channel(channel_id)
+                    if channel:
+                        await channel.send(f"⚠️ A música **{track.title}** ficou presa e foi pulada automaticamente.")
+                except Exception as e:
+                    logger.error(f"Erro ao enviar notificação de faixa presa para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao tentar pular faixa presa: {e}")
 
-    @commands.Cog.listener("on_mafic_node_ready")
-    async def on_mafic_node_ready(self, node: mafic.Node):
-        logger.info(f"--- [COG MUSICA MAFIC] Nó Lavalink '{node.label}' está pronto e conectado! Região: {node.region} ---")
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: nextcord.Member, before: nextcord.VoiceState, after: nextcord.VoiceState):
+        """Evento disparado quando o estado de voz de um membro muda."""
+        # Ignora se não for o bot
+        if member.id != self.bot.user.id:
+            return
+        
+        # Verifica se o bot foi desconectado do canal de voz
+        if before.channel and not after.channel:
+            # Bot foi desconectado, limpa o player
+            if member.guild.id in self.players:
+                logger.info(f"Bot desconectado do canal de voz em {member.guild.name} ({member.guild.id}). Limpando player.")
+                
+                try:
+                    # Tenta destruir o player corretamente
+                    player = self.players[member.guild.id]
+                    player.queue.clear()
+                    
+                    try:
+                        await player.destroy()
+                    except Exception as e_destroy:
+                        logger.error(f"Erro ao destruir player após desconexão para guild {member.guild.id}: {e_destroy}")
+                    
+                    # Remove o player da lista
+                    del self.players[member.guild.id]
+                    
+                    # Atualiza a mensagem de "agora tocando"
+                    if member.guild.id in self.now_playing_messages:
+                        try:
+                            msg_id, channel_id = self.now_playing_messages[member.guild.id]
+                            channel = self.bot.get_channel(channel_id)
+                            if channel:
+                                message = await channel.fetch_message(msg_id)
+                                await message.edit(content="Bot desconectado do canal de voz. Use `/tocar` para iniciar novamente.", embed=None, view=None)
+                            del self.now_playing_messages[member.guild.id]
+                        except Exception as e:
+                            logger.error(f"Erro ao atualizar mensagem 'agora tocando' após desconexão para guild {member.guild.id}: {e}")
+                except Exception as e:
+                    logger.error(f"Erro ao limpar player após desconexão para guild {member.guild.id}: {e}")
 
-    # Função setup para carregar a cog
-def setup(bot: commands.Bot):
-    logger.info("--- [COG MUSICA MAFIC] Tentando adicionar a cog Musica (Mafic) ao bot ---")
+    # Tratamento de erros para comandos de aplicação
+    @nextcord.Cog.listener()
+    async def on_application_command_error(self, interaction: Interaction, error):
+        # Verifica se o erro é de um comando desta cog
+        if hasattr(interaction, 'application_command'):
+            try:
+                # Verifica tipos específicos de erros
+                if isinstance(error, commands.CommandOnCooldown):
+                    await interaction.response.send_message(
+                        f"⚠️ Este comando está em cooldown. Tente novamente em {error.retry_after:.1f} segundos.",
+                        ephemeral=True
+                    )
+                elif isinstance(error, mafic.errors.HTTPNotFound):
+                    await interaction.response.send_message(
+                        f"⚠️ Erro de conexão com o servidor de música. Tente novamente mais tarde.",
+                        ephemeral=True
+                    )
+                    logger.error(f"Erro HTTP 404 do Lavalink: {error}")
+                elif isinstance(error, nextcord.errors.InteractionResponded):
+                    # Interação já respondida, apenas loga
+                    logger.warning(f"Interação já respondida: {error}")
+                else:
+                    # Erro genérico
+                    try:
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"⚠️ Ocorreu um erro ao executar este comando: {str(error)}",
+                                ephemeral=True
+                            )
+                        else:
+                            await interaction.followup.send(
+                                f"⚠️ Ocorreu um erro ao executar este comando: {str(error)}",
+                                ephemeral=True
+                            )
+                    except Exception as e:
+                        logger.error(f"Erro ao enviar mensagem de erro: {e}")
+                
+                # Loga o erro para debug
+                logger.error(f"Erro em comando de música: {error}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Erro ao tratar erro de comando: {e}", exc_info=True)
+
+# Função setup para carregar a cog
+def setup(bot):
     bot.add_cog(Musica(bot))
-    logger.info("--- [COG MUSICA MAFIC] Cog Musica (Mafic) adicionada ao bot ---")
