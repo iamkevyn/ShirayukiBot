@@ -479,10 +479,9 @@ class Comandos(commands.Cog):
         self.start_time = datetime.now(timezone.utc)
     
     # Evento de erro em comandos de aplicação
-    @nextcord.Cog.listener()
+    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
     async def on_application_command_error(self, interaction: Interaction, error):
         # Verifica se o erro é de um comando desta cog
-        # Não podemos mais usar cog_name, então verificamos de outra forma
         if hasattr(interaction, 'application_command'):
             # Verifica tipos específicos de erros
             if isinstance(error, commands.CommandOnCooldown):
