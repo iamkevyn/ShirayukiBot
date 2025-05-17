@@ -114,13 +114,6 @@ class MusicBot(commands.Bot):
 
 bot = MusicBot(command_prefix="!", intents=intents)
 logger.info("-> Instância de MusicBot criada.")
-
-@bot.slash_command(name="testemainslash", description="Um comando de teste simples no main.py")
-async def teste_main_slash(interaction: Interaction):
-    logger.info(f"--- [TESTE MAIN SLASH] Comando /testemainslash executado por {interaction.user} ---")
-    await interaction.response.send_message("Olá! Este é um comando de teste do main.py!", ephemeral=True)
-    logger.info("--- [TESTE MAIN SLASH] Resposta enviada. ---")
-
 @bot.event
 async def on_ready():
     if not bot._setup_hook_done:
