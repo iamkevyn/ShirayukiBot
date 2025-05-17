@@ -1,316 +1,318 @@
 # /home/ubuntu/ShirayukiBot/cogs/Interacoes.py
-# Cog para comandos de interação social.
+# Cog para comandos de interação social entre usuários.
 
+import nextcord
+from nextcord import Interaction, SlashOption, Embed, Color, Member, User
+from nextcord.ext import commands
+from nextcord.ui import View, Button
 import random
-import traceback
+import asyncio
+from datetime import datetime, timedelta, timezone  # Corrigido: removido 'import' extra
 import json
 import os
-import asyncio
-from datetime import import datetime, timedelta, timezone # Adicionado timezone
-import nextcord
-from nextcord import Interaction, Embed, Color, Member, SlashOption, User
-from nextcord.ext import commands # Mantido commands, removido application_checks daqui se não for usado para mais nada
+import traceback
 
-# Importar helper de emojis (usando placeholder como em outras cogs)
-def get_emoji(bot, name):
-    emoji_map = {
-        "blush_hands": "👉", "happy_flower": "🌸", "sparkle_happy": "✨",
-        "determined": "😤", "peek": "👀", "thinking": "🤔", "sad": "😢",
-        "interaction_stats": "📊", "error": "❌"
-    }
-    return emoji_map.get(name, "")
+# Diretório para armazenar dados
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+INTERACTIONS_FILE = os.path.join(DATA_DIR, "interactions.json")
 
-# --- Configurações ---
-DEFAULT_COLOR = Color.magenta()
-COOLDOWN_SECONDS = 5
-STATS_FILE = "/home/ubuntu/ShirayukiBot/data/interaction_stats.json"
-# A GIF_DATABASE_URL não está sendo usada ativamente no código fornecido, mas mantida se for usada no futuro.
-# GIF_DATABASE_URL = "https://gist.githubusercontent.com/iamkevyn/4101031646a2a3cf4b531b183b6e40e/raw/"
+# Garante que o diretório de dados existe
+os.makedirs(DATA_DIR, exist_ok=True)
 
-INTERACTION_GIFS_LOCAL = {
-    "hug": {"verb": "abraçou", "emoji_name": "blush_hands", "gifs": ["https://media.tenor.com/2roX3uxz_68AAAAC/hug.gif", 
-"https://media.tenor.com/NeXn0mMF5iYAAAAC/anime-hug.gif"]},
-    "pat": {"verb": "acariciou", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/7vZ9TnA1fFQAAAAC/pat-head.gif", 
-"https://media.tenor.com/YGdCdp9bMGUAAAAC/anime-pat.gif"]},
-    "cuddle": {"verb": "se aconchegou com", "emoji_name": "blush_hands", "gifs": ["https://media.tenor.com/PjsYjKdCMhcAAAAC/anime-cuddle.gif", 
-"https://media.tenor.com/Nhcz0gKaNfcAAAAC/anime-hug-cuddle.gif"]},
-    "highfive": {"verb": "bateu um highfive com", "emoji_name": "sparkle_happy", "gifs": ["https://media.tenor.com/jClaHxw_d7gAAAAC/anime-highfive.gif", 
-"https://media.tenor.com/MRe9gw0Af5sAAAAC/high-five-anime.gif"]},
-    "wave": {"verb": "acenou para", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/WRR8oRbFq0wAAAAC/anime-wave.gif", 
-"https://media.tenor.com/pS5fGiDw6vQAAAAC/hi-hello.gif"]},
-    "applaud": {"verb": "aplaudiu", "emoji_name": "sparkle_happy", "gifs": ["https://media.tenor.com/mGH6yxTQ5g0AAAAC/anime-clapping.gif", 
-"https://media.tenor.com/tJHUJ9QY8iAAAAAC/clapping-anime.gif"]},
-    "feed": {"verb": "deu comida para", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/3vQgHFUAN7gAAAAC/feed-anime.gif", 
-"https://media.tenor.com/z9jHvJbuwq4AAAAC/anime-feed.gif"]},
-    "cheer": {"verb": "animou", "emoji_name": "sparkle_happy", "gifs": ["https://media.tenor.com/jG65XLOkkJAAAAAC/anime-cheer.gif", 
-"https://media.tenor.com/6C5T3DtAYCUAAAAC/anime-cheer.gif"]},
-    "comfort": {"verb": "consolou", "emoji_name": "blush_hands", "gifs": ["https://media.tenor.com/9elaE_oBLCsAAAAC/anime-hug.gif", 
-"https://media.tenor.com/1T1X5kDk574AAAAC/anime-hug-sweet.gif"]},
-    "protect": {"verb": "protegeu", "emoji_name": "determined", "gifs": ["https://media.tenor.com/5WQEduGM3-AAAAAC/protect-anime.gif", 
-"https://media.tenor.com/QnHW2dt5mXAAAAAC/anime-protect.gif"]},
-    "kiss": {"verb": "beijou", "emoji_name": "blush_hands", "gifs": ["https://media.tenor.com/Bq7iU7yb3OsAAAAC/kiss-anime.gif", 
-"https://media.tenor.com/0AVn4U0VOnwAAAAC/anime-kiss.gif"]},
-    "holdhands": {"verb": "segurou as mãos de", "emoji_name": "blush_hands", "gifs": ["https://media.tenor.com/J7eCq3yX0qAAAAC/anime-hold-hands.gif", 
-"https://media.tenor.com/WUZAwo5KFdMAAAAC/love-holding-hands.gif"]},
-    "propose": {"verb": "pediu em casamento", "emoji_name": "sparkle_happy", "gifs": ["https://media.tenor.com/3-z5Xd7QpY0AAAAC/anime-proposal.gif", 
-"https://media.tenor.com/84d6sQ20CBsAAAAC/anime-propose.gif"]},
-    "slap": {"verb": "deu um tapa em", "emoji_name": "determined", "gifs": ["https://media.tenor.com/5zv7N_p4OZMAAAAC/anime-slap.gif", 
-"https://media.tenor.com/RwD7bRfGzIYAAAAC/slap.gif"]},
-    "punch": {"verb": "deu um soco em", "emoji_name": "determined", "gifs": ["https://media.tenor.com/LIYEB7qz2JOAAAAC/anime-punch.gif", 
-"https://media.tenor.com/bmA4WcLh-YkAAAAC/punch-anime.gif"]},
-    "kick": {"verb": "chutou", "emoji_name": "determined", "gifs": ["https://media.tenor.com/_LS2CBQw0aYAAAAC/kick-anime.gif", 
-"https://media.tenor.com/GzyM0mHf2ksAAAAC/anime-kick.gif"]},
-    "bonk": {"verb": "deu uma bonkada em", "emoji_name": "peek", "gifs": ["https://media.tenor.com/tZLXJtz1MCMAAAAC/anime-bonk.gif", 
-"https://media.tenor.com/4LfL0ZU-1l4AAAAC/anime-girl.gif"]},
-    "poke": {"verb": "cutucou", "emoji_name": "peek", "gifs": ["https://media.tenor.com/p6xjxkxvQWcAAAAC/anime-poke.gif", 
-"https://media.tenor.com/3dOqO0sDfpgAAAAC/anime-poke.gif"]},
-    "boop": {"verb": "deu um boop em", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/OGnRVWCps7AAAAAC/boop-anime.gif", 
-"https://media.tenor.com/Ug6cbVLKQr8AAAAC/boop-anime.gif"]},
-    "tickle": {"verb": "fez cócegas em", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/PXL1ONAO9CEAAAAC/tickle-anime.gif", 
-"https://media.tenor.com/L5-ABrIwKioAAAAC/tickle-anime.gif"]},
-    "bite": {"verb": "mordeu", "emoji_name": "peek", "gifs": ["https://media.tenor.com/Ux-7WWvPJbMAAAAC/anime-bite.gif", 
-"https://media.tenor.com/CsKYN49b5eEAAAAC/anime-bite.gif"]},
-    "lick": {"verb": "lambeu", "emoji_name": "peek", "gifs": ["https://media.tenor.com/YgZMN7yLdcYAAAAC/anime-lick.gif", 
-"https://media.tenor.com/30UeGiktwO8AAAAC/anime-lick.gif"]},
-    "stare": {"verb": "encarou", "emoji_name": "peek", "gifs": ["https://media.tenor.com/ba3y7jB1-ekAAAAC/anime-stare.gif", 
-"https://media.tenor.com/ixaDEFhYJLsAAAAC/anime-stare.gif"]},
-    "cry": {"verb": "chorou para", "emoji_name": "sad", "gifs": ["https://media.tenor.com/dJBIzMRU4c0AAAAC/anime-cry.gif", 
-"https://media.tenor.com/Mf6KNYzZsXwAAAAC/anime-cry.gif"]},
-    "dance": {"verb": "dançou com", "emoji_name": "sparkle_happy", "gifs": ["https://media.tenor.com/9tx-7cVNgXwAAAAC/anime-dance.gif", 
-"https://media.tenor.com/MPxVm0G8D_AAAAAC/anime-dance.gif"]},
-    "laugh": {"verb": "riu de", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/pI4S2Z0-FMMAAAAd/anime-laugh.gif", 
-"https://media.tenor.com/XpU-ZgX2JCQAAAAC/anime-laugh.gif"]},
-    "smile": {"verb": "sorriu para", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/71pF6p5tG7AAAAAC/anime-smile.gif", 
-"https://media.tenor.com/z_AbZ_AzpFAAAAAC/anime-smile.gif"]},
-    "wink": {"verb": "piscou para", "emoji_name": "peek", "gifs": ["https://media.tenor.com/QLvr6WlAZoMAAAAC/anime-wink.gif", 
-"https://media.tenor.com/Ajitx1SRQNMAAAAC/anime-wink.gif"]},
-    "yawn": {"verb": "bocejou para", "emoji_name": "peek", "gifs": ["https://media.tenor.com/SiBnGOkNtFEAAAAC/anime-yawn.gif", 
-"https://media.tenor.com/UGikYpn9MqAAAAAC/anime-yawn.gif"]},
-    "sleep": {"verb": "dormiu com", "emoji_name": "peek", "gifs": ["https://media.tenor.com/ERd5Ow9z0nMAAAAC/anime-sleep.gif", 
-"https://media.tenor.com/TOJfZyXgQ4QAAAAC/anime-sleep.gif"]},
-    "run": {"verb": "correu de", "emoji_name": "determined", "gifs": ["https://media.tenor.com/ZKRDC7BOXCgAAAAC/anime-run.gif", 
-"https://media.tenor.com/Pj0QP2c_GmMAAAAC/anime-run.gif"]},
-    "shrug": {"verb": "deu de ombros para", "emoji_name": "thinking", "gifs": ["https://media.tenor.com/U2HXHRUuU38AAAAC/anime-shrug.gif", 
-"https://media.tenor.com/9tyHIR9VeOAAAAAd/anime-shrug.gif"]},
-    "facepalm": {"verb": "fez facepalm para", "emoji_name": "thinking", "gifs": ["https://media.tenor.com/Ql7b1cCBzVUAAAAC/anime-facepalm.gif", 
-"https://media.tenor.com/Vx-TcXUiq-AAAAAC/anime-facepalm.gif"]},
-    "blush": {"verb": "corou para", "emoji_name": "blush_hands", "gifs": ["https://media.tenor.com/hCx1A-iyS3AAAAAC/anime-blush.gif", 
-"https://media.tenor.com/hnvTwjPYAvcAAAAC/anime-blush.gif"]},
-    "panic": {"verb": "entrou em pânico com", "emoji_name": "thinking", "gifs": ["https://media.tenor.com/GFEIRU9UOIgAAAAC/anime-panic.gif", 
-"https://media.tenor.com/ht_Dj9LvjUYAAAAC/anime-panic.gif"]},
-    "faint": {"verb": "desmaiou por causa de", "emoji_name": "sad", "gifs": ["https://media.tenor.com/DHGXoG8cmJEAAAAC/anime-faint.gif", 
-"https://media.tenor.com/Xvx4_NSX8XAAAAAC/anime-faint.gif"]},
-    "shock": {"verb": "ficou chocado com", "emoji_name": "thinking", "gifs": ["https://media.tenor.com/x6zNKP-LX8QAAAAC/anime-shock.gif", 
-"https://media.tenor.com/AlvyT2QS5Z4AAAAC/anime-shock.gif"]},
-    "sigh": {"verb": "suspirou para", "emoji_name": "sad", "gifs": ["https://media.tenor.com/QP3QK9_1u-AAAAAC/anime-sigh.gif", 
-"https://media.tenor.com/Gv6-EwRZlJEAAAAC/anime-sigh.gif"]},
-    "pout": {"verb": "fez bico para", "emoji_name": "sad", "gifs": ["https://media.tenor.com/PPdI-miAOWMAAAAC/anime-pout.gif", 
-"https://media.tenor.com/3Y_jsCTWJK8AAAAC/anime-pout.gif"]},
-    "smug": {"verb": "olhou com ar de superioridade para", "emoji_name": "peek", "gifs": ["https://media.tenor.com/DNVGTeUUr_EAAAAC/anime-smug.gif", 
-"https://media.tenor.com/9yAYYRVpJFAAAAAC/anime-smug.gif"]},
-    "greet": {"verb": "cumprimentou", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/sX8Z5-Q4o-MAAAAC/anime-greet.gif", 
-"https://media.tenor.com/UG_zoMMhFgYAAAAC/anime-greet.gif"]},
-    "handshake": {"verb": "apertou a mão de", "emoji_name": "determined", "gifs": ["https://media.tenor.com/EGhbN8-MJxsAAAAC/anime-handshake.gif", 
-"https://media.tenor.com/pmP0scXWgD8AAAAC/anime-handshake.gif"]},
-    "bow": {"verb": "se curvou para", "emoji_name": "determined", "gifs": ["https://media.tenor.com/Lqvric7IDEQAAAAC/anime-bow.gif", 
-"https://media.tenor.com/9Tng5AjNGWAAAAAC/anime-bow.gif"]},
-    "salute": {"verb": "saudou", "emoji_name": "determined", "gifs": ["https://media.tenor.com/QyOtKAu0kUAAAAAC/anime-salute.gif", 
-"https://media.tenor.com/Aq4nnQJ4Kk8AAAAC/anime-salute.gif"]},
-    "thumbsup": {"verb": "deu um joinha para", "emoji_name": "determined", "gifs": ["https://media.tenor.com/vBMSGAapO4AAAAAC/anime-thumbsup.gif", 
-"https://media.tenor.com/Ff7YqYhfcJcAAAAC/anime-thumbsup.gif"]},
-    "thumbsdown": {"verb": "deu um polegar para baixo para", "emoji_name": "determined", "gifs": ["https://media.tenor.com/Ux7JKt-ITMQAAAAC/anime-thumbsdown.gif", 
-"https://media.tenor.com/KHQIGbuLMuUAAAAC/anime-thumbsdown.gif"]},
-    "angry": {"verb": "ficou com raiva de", "emoji_name": "determined", "gifs": ["https://media.tenor.com/ikKX3hCKLYMAAAAC/anime-angry.gif", 
-"https://media.tenor.com/jgFVzP4U0JQAAAAC/anime-angry.gif"]},
-    "confused": {"verb": "ficou confuso com", "emoji_name": "thinking", "gifs": ["https://media.tenor.com/VlSXTGC9J-EAAAAC/anime-confused.gif", 
-"https://media.tenor.com/Xcr8fHyf_bsAAAAC/anime-confused.gif"]},
-    "nod": {"verb": "acenou com a cabeça para", "emoji_name": "determined", "gifs": ["https://media.tenor.com/lwgVisdwvOYAAAAC/anime-nod.gif", 
-"https://media.tenor.com/4jkT3ZET0XAAAAAC/anime-nod.gif"]},
-    "headshake": {"verb": "balançou a cabeça para", "emoji_name": "determined", "gifs": ["https://media.tenor.com/N5maDXP-JXAAAAAC/anime-headshake.gif", 
-"https://media.tenor.com/Y_Y7qEY3cF0AAAAC/anime-headshake.gif"]},
-    "fistbump": {"verb": "deu um soquinho em", "emoji_name": "determined", "gifs": ["https://media.tenor.com/4P40sFRri48AAAAC/anime-fistbump.gif", 
-"https://media.tenor.com/CrmEU2LKix4AAAAC/anime-fistbump.gif"]},
-    "judge": {"verb": "julgou", "emoji_name": "thinking", "gifs": ["https://media.tenor.com/Yrj3O3RpXGkAAAAC/anime-judge.gif", 
-"https://media.tenor.com/q-zZSTX6jSAAAAAC/anime-judge.gif"]},
-    "glare": {"verb": "olhou feio para", "emoji_name": "determined", "gifs": ["https://media.tenor.com/EB4dLFKV-VgAAAAC/anime-glare.gif", 
-"https://media.tenor.com/AlUwZp0F0MQAAAAC/anime-glare.gif"]},
-    "ignore": {"verb": "ignorou", "emoji_name": "thinking", "gifs": ["https://media.tenor.com/Tc_TUkCQQB8AAAAC/anime-ignore.gif", 
-"https://media.tenor.com/YVIZq3qG-IIAAAAC/anime-ignore.gif"]},
-    "sip": {"verb": "bebeu com", "emoji_name": "peek", "gifs": ["https://media.tenor.com/Uvx6-jXQ5TIAAAAC/anime-sip.gif", 
-"https://media.tenor.com/12Gk1LK4MXAAAAAC/anime-sip.gif"]},
-    "eat": {"verb": "comeu com", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/N_0_u_cXqVgAAAAC/anime-eat.gif", 
-"https://media.tenor.com/E7Lq659I1AAAAAAC/anime-eat.gif"]},
-    "nom": {"verb": "deu um nomnom em", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/Hnt4ZcFQVe4AAAAC/anime-nom.gif", 
-"https://media.tenor.com/3I_W6zHvR80AAAAC/anime-nom.gif"]},
-    "pet": {"verb": "fez carinho em", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/N41zKEDABuUAAAAC/anime-pet.gif", 
-"https://media.tenor.com/wieV_G7L_WgAAAAC/anime-pet.gif"]},
-    "pinch": {"verb": "beliscou", "emoji_name": "peek", "gifs": ["https://media.tenor.com/Vx9wYdAGIKAAAAAC/anime-pinch.gif", 
-"https://media.tenor.com/HV0CrfZOQHAAAAAC/anime-pinch.gif"]},
-    "squish": {"verb": "apertou as bochechas de", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/3SfqB3JEbmMAAAAC/anime-squish.gif", 
-"https://media.tenor.com/MMQVw1SHf8AAAAAC/anime-squish.gif"]},
-    "bully": {"verb": "zoou", "emoji_name": "peek", "gifs": ["https://media.tenor.com/PKKCAakpBZIAAAAC/anime-bully.gif", 
-"https://media.tenor.com/Ht7EGVjyRtwAAAAC/anime-bully.gif"]},
-    "tease": {"verb": "provocou", "emoji_name": "peek", "gifs": ["https://media.tenor.com/jF9rRqW-z1AAAAAC/anime-tease.gif", 
-"https://media.tenor.com/Ql6HS0TcCakAAAAC/anime-tease.gif"]},
-    "scold": {"verb": "deu bronca em", "emoji_name": "determined", "gifs": ["https://media.tenor.com/qQXjuFYKQN0AAAAC/anime-scold.gif", 
-"https://media.tenor.com/XikoNQDfaqwAAAAC/anime-scold.gif"]},
-    "praise": {"verb": "elogiou", "emoji_name": "sparkle_happy", "gifs": ["https://media.tenor.com/J0qLkk9-PXAAAAAC/anime-praise.gif", 
-"https://media.tenor.com/Svnb5I_LuTYAAAAC/anime-praise.gif"]},
-    "thank": {"verb": "agradeceu", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/Gv0cUfzWbJAAAAAC/anime-thank.gif", 
-"https://media.tenor.com/Ajitx1SRQNMAAAAC/anime-thank.gif"]},
-    "sorry": {"verb": "pediu desculpas para", "emoji_name": "sad", "gifs": ["https://media.tenor.com/OPLmgzTWRuQAAAAC/anime-sorry.gif", 
-"https://media.tenor.com/qXh-Y67gmVQAAAAC/anime-sorry.gif"]},
-    "forgive": {"verb": "perdoou", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/YfYnrX2wnP4AAAAC/anime-forgive.gif", 
-"https://media.tenor.com/qXh-Y67gmVQAAAAC/anime-forgive.gif"]},
-    "congrats": {"verb": "parabenizou", "emoji_name": "sparkle_happy", "gifs": ["https://media.tenor.com/E9qBWrKisp0AAAAC/anime-congrats.gif", 
-"https://media.tenor.com/9tx-7cVNgXwAAAAC/anime-congrats.gif"]},
-    "celebrate": {"verb": "celebrou com", "emoji_name": "sparkle_happy", "gifs": ["https://media.tenor.com/9tx-7cVNgXwAAAAC/anime-celebrate.gif", 
-"https://media.tenor.com/E9qBWrKisp0AAAAC/anime-celebrate.gif"]},
-    "welcome": {"verb": "deu boas-vindas a", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/sX8Z5-Q4o-MAAAAC/anime-welcome.gif", 
-"https://media.tenor.com/UG_zoMMhFgYAAAAC/anime-welcome.gif"]},
-    "goodbye": {"verb": "se despediu de", "emoji_name": "sad", "gifs": ["https://media.tenor.com/OGnRVWCps7AAAAAC/anime-goodbye.gif", 
-"https://media.tenor.com/Ug6cbVLKQr8AAAAC/anime-goodbye.gif"]},
-    "goodnight": {"verb": "desejou boa noite para", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/ERd5Ow9z0nMAAAAC/anime-goodnight.gif", 
-"https://media.tenor.com/TOJfZyXgQ4QAAAAC/anime-goodnight.gif"]},
-    "goodmorning": {"verb": "desejou bom dia para", "emoji_name": "happy_flower", "gifs": ["https://media.tenor.com/71pF6p5tG7AAAAAC/anime-goodmorning.gif", 
-"https://media.tenor.com/z_AbZ_AzpFAAAAAC/anime-goodmorning.gif"]}
-}
-
-# Função para carregar estatísticas de interação
-def load_interaction_stats():
-    if os.path.exists(STATS_FILE):
+# Carrega ou cria o arquivo de interações
+def load_interactions_data():
+    if os.path.exists(INTERACTIONS_FILE):
         try:
-            with open(STATS_FILE, 'r', encoding='utf-8') as f:
+            with open(INTERACTIONS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Erro ao carregar estatísticas: {e}")
-            return {}
-    return {}
+            print(f"[ERRO] Falha ao carregar arquivo de interações: {e}")
+            return {"users": {}, "last_updated": datetime.now(timezone.utc).isoformat()}
+    else:
+        default_data = {"users": {}, "last_updated": datetime.now(timezone.utc).isoformat()}
+        save_interactions_data(default_data)
+        return default_data
 
-# Função para salvar estatísticas de interação
-def save_interaction_stats(stats):
+# Salva os dados de interações
+def save_interactions_data(data):
     try:
-        os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
-        with open(STATS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(stats, f, ensure_ascii=False, indent=4)
+        with open(INTERACTIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        print(f"Erro ao salvar estatísticas: {e}")
+        print(f"[ERRO] Falha ao salvar arquivo de interações: {e}")
 
-# Função para atualizar estatísticas de interação
-def update_interaction_stats(interaction_type, user_id, target_id):
-    stats = load_interaction_stats()
+# Lista de interações disponíveis
+INTERACTIONS = {
+    "abraçar": {
+        "emoji": "🤗",
+        "messages": [
+            "{user} deu um abraço apertado em {target}!",
+            "{user} abraçou {target} com carinho!",
+            "{user} envolveu {target} em um abraço caloroso!"
+        ],
+        "gifs": [
+            "https://media.giphy.com/media/u9BxQbM5bxvwY/giphy.gif",
+            "https://media.giphy.com/media/PHZ7v9tfQu0w0/giphy.gif",
+            "https://media.giphy.com/media/3M4NpbLCTxBqU/giphy.gif"
+        ]
+    },
+    "beijar": {
+        "emoji": "💋",
+        "messages": [
+            "{user} deu um beijo em {target}!",
+            "{user} beijou {target} apaixonadamente!",
+            "{user} plantou um beijo na bochecha de {target}!"
+        ],
+        "gifs": [
+            "https://media.giphy.com/media/bGm9FuBCGg4SY/giphy.gif",
+            "https://media.giphy.com/media/zkppEMFvRX5FC/giphy.gif",
+            "https://media.giphy.com/media/G3va31oEEnIkM/giphy.gif"
+        ]
+    },
+    "cumprimentar": {
+        "emoji": "👋",
+        "messages": [
+            "{user} cumprimentou {target} com entusiasmo!",
+            "{user} acenou para {target}!",
+            "{user} deu um 'olá' animado para {target}!"
+        ],
+        "gifs": [
+            "https://media.giphy.com/media/3og0IFrHkIglEOg8Ba/giphy.gif",
+            "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",
+            "https://media.giphy.com/media/ASd0Ukj0y3qMM/giphy.gif"
+        ]
+    },
+    "bater": {
+        "emoji": "👊",
+        "messages": [
+            "{user} deu um soco em {target}! Isso deve ter doído!",
+            "{user} bateu em {target}! Ai!",
+            "{user} atacou {target} com toda força!"
+        ],
+        "gifs": [
+            "https://media.giphy.com/media/l1J3G5lf06vi58EIE/giphy.gif",
+            "https://media.giphy.com/media/3o7TKO3AC501Z6qRnG/giphy.gif",
+            "https://media.giphy.com/media/DuVRadBbaX6A8/giphy.gif"
+        ]
+    },
+    "cafuné": {
+        "emoji": "✨",
+        "messages": [
+            "{user} fez um cafuné gostoso em {target}!",
+            "{user} acariciou a cabeça de {target} com carinho!",
+            "{user} fez carinho nos cabelos de {target}!"
+        ],
+        "gifs": [
+            "https://media.giphy.com/media/ARSp9T7wwxNcs/giphy.gif",
+            "https://media.giphy.com/media/109ltuoSQT212w/giphy.gif",
+            "https://media.giphy.com/media/ye7OTQgwmVuVy/giphy.gif"
+        ]
+    },
+    "dançar": {
+        "emoji": "💃",
+        "messages": [
+            "{user} chamou {target} para dançar!",
+            "{user} está dançando com {target}!",
+            "{user} e {target} estão arrasando na pista de dança!"
+        ],
+        "gifs": [
+            "https://media.giphy.com/media/l3q2DgVwYEKVAPm6c/giphy.gif",
+            "https://media.giphy.com/media/26AHLNr8en8J3ovOo/giphy.gif",
+            "https://media.giphy.com/media/3o7qE2VAxuXWeyvJIY/giphy.gif"
+        ]
+    },
+    "highfive": {
+        "emoji": "🙌",
+        "messages": [
+            "{user} deu um high five em {target}!",
+            "{user} e {target} bateram as mãos em comemoração!",
+            "{user} celebrou com {target} com um high five!"
+        ],
+        "gifs": [
+            "https://media.giphy.com/media/3oEjHV0z8S7WM4MwnK/giphy.gif",
+            "https://media.giphy.com/media/bp0fZr9JxsFwY/giphy.gif",
+            "https://media.giphy.com/media/HX3lSnGXZnaWk/giphy.gif"
+        ]
+    },
+    "cutucar": {
+        "emoji": "👉",
+        "messages": [
+            "{user} cutucou {target}!",
+            "{user} está incomodando {target} com cutucadas!",
+            "{user} deu uma cutucada em {target} para chamar atenção!"
+        ],
+        "gifs": [
+            "https://media.giphy.com/media/WPaIJN6EM9v0s/giphy.gif",
+            "https://media.giphy.com/media/LkxUdPkwlIxAk/giphy.gif",
+            "https://media.giphy.com/media/10MSCF1viNV7ry/giphy.gif"
+        ]
+    }
+}
+
+class InteractionView(View):
+    def __init__(self, user, target, interaction_type):
+        super().__init__(timeout=60)
+        self.user = user
+        self.target = target
+        self.interaction_type = interaction_type
+        self.responded = False
     
-    # Inicializa estrutura se não existir
-    if str(user_id) not in stats:
-        stats[str(user_id)] = {}
-    if "sent" not in stats[str(user_id)]:
-        stats[str(user_id)]["sent"] = {}
-    if interaction_type not in stats[str(user_id)]["sent"]:
-        stats[str(user_id)]["sent"][interaction_type] = {}
-    if str(target_id) not in stats[str(user_id)]["sent"][interaction_type]:
-        stats[str(user_id)]["sent"][interaction_type][str(target_id)] = 0
+    async def on_timeout(self):
+        if not self.responded:
+            for item in self.children:
+                item.disabled = True
+            
+            try:
+                await self.message.edit(content=f"{self.target.mention} não respondeu ao {self.interaction_type} de {self.user.mention} a tempo.", view=self)
+            except:
+                pass
     
-    # Incrementa contador
-    stats[str(user_id)]["sent"][interaction_type][str(target_id)] += 1
+    @nextcord.ui.button(label="Retribuir", style=nextcord.ButtonStyle.primary)
+    async def return_interaction(self, button: nextcord.ui.Button, interaction: Interaction):
+        if interaction.user.id != self.target.id:
+            await interaction.response.send_message(f"Apenas {self.target.mention} pode retribuir esta interação.", ephemeral=True)
+            return
+        
+        self.responded = True
+        for item in self.children:
+            item.disabled = True
+        
+        await interaction.response.edit_message(view=self)
+        
+        # Cria uma nova interação invertendo user e target
+        interaction_data = INTERACTIONS[self.interaction_type]
+        message = random.choice(interaction_data["messages"]).format(user=self.target.mention, target=self.user.mention)
+        gif = random.choice(interaction_data["gifs"])
+        
+        embed = Embed(
+            title=f"{interaction_data['emoji']} {self.interaction_type.capitalize()} Retribuído!",
+            description=message,
+            color=Color.purple()
+        )
+        embed.set_image(url=gif)
+        embed.set_footer(text=f"Interação retribuída por {self.target.display_name}")
+        
+        await interaction.followup.send(embed=embed)
+        
+        # Atualiza estatísticas
+        await update_interaction_stats(self.target.id, self.user.id, self.interaction_type)
     
-    # Faz o mesmo para o alvo (recebido)
-    if str(target_id) not in stats:
-        stats[str(target_id)] = {}
-    if "received" not in stats[str(target_id)]:
-        stats[str(target_id)]["received"] = {}
-    if interaction_type not in stats[str(target_id)]["received"]:
-        stats[str(target_id)]["received"][interaction_type] = {}
-    if str(user_id) not in stats[str(target_id)]["received"][interaction_type]:
-        stats[str(target_id)]["received"][interaction_type][str(user_id)] = 0
+    @nextcord.ui.button(label="Recusar", style=nextcord.ButtonStyle.danger)
+    async def decline_interaction(self, button: nextcord.ui.Button, interaction: Interaction):
+        if interaction.user.id != self.target.id:
+            await interaction.response.send_message(f"Apenas {self.target.mention} pode recusar esta interação.", ephemeral=True)
+            return
+        
+        self.responded = True
+        for item in self.children:
+            item.disabled = True
+        
+        await interaction.response.edit_message(content=f"{self.target.mention} recusou o {self.interaction_type} de {self.user.mention}.", view=self)
+
+async def update_interaction_stats(user_id, target_id, interaction_type):
+    user_id = str(user_id)
+    target_id = str(target_id)
     
-    # Incrementa contador
-    stats[str(target_id)]["received"][interaction_type][str(user_id)] += 1
+    data = load_interactions_data()
     
-    save_interaction_stats(stats)
+    # Inicializa dados do usuário se não existirem
+    if user_id not in data["users"]:
+        data["users"][user_id] = {"sent": {}, "received": {}, "total_sent": 0, "total_received": 0}
+    
+    if target_id not in data["users"]:
+        data["users"][target_id] = {"sent": {}, "received": {}, "total_sent": 0, "total_received": 0}
+    
+    # Atualiza estatísticas de envio para o usuário
+    if interaction_type not in data["users"][user_id]["sent"]:
+        data["users"][user_id]["sent"][interaction_type] = 0
+    data["users"][user_id]["sent"][interaction_type] += 1
+    data["users"][user_id]["total_sent"] += 1
+    
+    # Atualiza estatísticas de recebimento para o alvo
+    if interaction_type not in data["users"][target_id]["received"]:
+        data["users"][target_id]["received"][interaction_type] = 0
+    data["users"][target_id]["received"][interaction_type] += 1
+    data["users"][target_id]["total_received"] += 1
+    
+    # Atualiza timestamp
+    data["last_updated"] = datetime.now(timezone.utc).isoformat()
+    
+    save_interactions_data(data)
 
 class Interacoes(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.cooldowns = {}
+        print("[INFO] Cog Interacoes carregada.")
     
-    # Função para verificar cooldown
-    def check_cooldown(self, user_id):
-        if user_id in self.cooldowns:
-            last_use = self.cooldowns[user_id]
-            if datetime.now(timezone.utc) - last_use < timedelta(seconds=COOLDOWN_SECONDS):
-                return False
-        return True
+    # Evento de erro em comandos de aplicação
+    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
+    async def on_application_command_error(self, interaction: Interaction, error):
+        # Verifica se o erro é de um comando desta cog
+        if hasattr(interaction, 'application_command'):
+            try:
+                # Verifica tipos específicos de erros
+                if isinstance(error, commands.CommandOnCooldown):
+                    await interaction.response.send_message(
+                        f"⚠️ Este comando está em cooldown. Tente novamente em {error.retry_after:.1f} segundos.",
+                        ephemeral=True
+                    )
+                else:
+                    # Erro genérico
+                    try:
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"⚠️ Ocorreu um erro ao executar este comando: {str(error)}",
+                                ephemeral=True
+                            )
+                        else:
+                            await interaction.followup.send(
+                                f"⚠️ Ocorreu um erro ao executar este comando: {str(error)}",
+                                ephemeral=True
+                            )
+                    except Exception as e:
+                        print(f"[ERRO INTERACAO] Erro ao enviar mensagem de erro: {e}")
+                
+                # Loga o erro para debug
+                print(f"[ERRO INTERACAO] {error}")
+                traceback.print_exception(type(error), error, error.__traceback__)
+            except Exception as e:
+                print(f"[ERRO INTERACAO] Erro ao tratar erro de comando: {e}")
     
-    # Função para atualizar cooldown
-    def update_cooldown(self, user_id):
-        self.cooldowns[user_id] = datetime.now(timezone.utc)
-    
-    # Função para criar embed de interação
-    def create_interaction_embed(self, interaction_type, user, target, gif_url):
-        interaction_data = INTERACTION_GIFS_LOCAL.get(interaction_type, {"verb": "interagiu com", "emoji_name": "sparkle_happy"})
-        verb = interaction_data["verb"]
-        emoji_name = interaction_data["emoji_name"]
-        emoji = get_emoji(self.bot, emoji_name)
-        
-        embed = Embed(
-            title=f"{emoji} Interação Social {emoji}",
-            description=f"**{user.display_name}** {verb} **{target.display_name}**",
-            color=DEFAULT_COLOR
-        )
-        embed.set_image(url=gif_url)
-        embed.set_footer(text=f"Use /interacao para ver todas as interações disponíveis!")
-        return embed
-    
-    # Comando de interação genérico
     @nextcord.slash_command(
         name="interacao",
         description="Comandos de interação social com outros usuários."
     )
-    async def interacao(self, interaction: Interaction):
-        # Este é apenas o grupo de comandos, não faz nada sozinho
+    async def interaction(self, interaction: Interaction):
+        """Grupo de comandos de interação."""
         pass
     
-    # Subcomando para listar todas as interações disponíveis
-    @interacao.subcommand(
+    @interaction.subcommand(
         name="lista",
-        description="Lista todas as interações sociais disponíveis."
+        description="Lista todas as interações disponíveis."
     )
-    async def lista_interacoes(self, interaction: Interaction):
+    async def list_interactions(self, interaction: Interaction):
+        """Lista todas as interações disponíveis."""
         embed = Embed(
-            title=f"{get_emoji(self.bot, 'interaction_stats')} Lista de Interações Sociais",
-            description="Aqui estão todas as interações sociais disponíveis:",
-            color=DEFAULT_COLOR
+            title="🤝 Interações Disponíveis",
+            description="Aqui estão todas as interações que você pode usar com outros usuários:",
+            color=Color.blue()
         )
         
-        # Agrupa as interações por categoria
-        categories = {
-            "Positivas": ["hug", "pat", "cuddle", "highfive", "wave", "applaud", "cheer", "comfort", "protect", "kiss", "holdhands", "propose", "blush", "smile", "wink", "dance", "greet", "handshake", "bow", "salute", "thumbsup", "nod", "fistbump", "praise", "thank", "forgive", "congrats", "celebrate", "welcome", "goodnight", "goodmorning"],
-            "Neutras": ["feed", "stare", "yawn", "sleep", "shrug", "facepalm", "sigh", "pout", "smug", "confused", "headshake", "judge", "ignore", "sip", "eat", "nom", "pet", "pinch", "squish", "tease"],
-            "Negativas": ["slap", "punch", "kick", "bonk", "poke", "bite", "lick", "cry", "laugh", "run", "panic", "faint", "shock", "angry", "glare", "bully", "scold", "sorry", "goodbye"]
-        }
+        for name, data in INTERACTIONS.items():
+            embed.add_field(
+                name=f"{data['emoji']} {name.capitalize()}",
+                value=f"Use `/interacao {name} @usuário` para interagir!",
+                inline=True
+            )
         
-        for category, interactions in categories.items():
-            interaction_list = []
-            for interaction_type in sorted(interactions):
-                if interaction_type in INTERACTION_GIFS_LOCAL:
-                    interaction_list.append(f"`/interacao {interaction_type}`")
-            
-            if interaction_list:
-                embed.add_field(
-                    name=f"**{category}**",
-                    value=", ".join(interaction_list),
-                    inline=False
-                )
-        
-        embed.set_footer(text="Use /interacao stats para ver suas estatísticas de interação!")
         await interaction.response.send_message(embed=embed)
     
-    # Subcomando para ver estatísticas de interação
-    @interacao.subcommand(
+    @interaction.subcommand(
         name="stats",
-        description="Veja suas estatísticas de interação social."
+        description="Mostra suas estatísticas de interação."
     )
-    async def stats_interacao(
+    async def interaction_stats(
         self,
         interaction: Interaction,
         usuario: User = SlashOption(
@@ -319,149 +321,136 @@ class Interacoes(commands.Cog):
             required=False
         )
     ):
-        target_user = usuario or interaction.user
-        stats = load_interaction_stats()
+        """Mostra estatísticas de interação de um usuário."""
+        target = usuario or interaction.user
+        target_id = str(target.id)
         
-        if str(target_user.id) not in stats:
-            await interaction.response.send_message(f"{target_user.mention} ainda não tem estatísticas de interação.", ephemeral=True)
+        data = load_interactions_data()
+        
+        if target_id not in data["users"]:
+            await interaction.response.send_message(f"{target.mention} ainda não tem estatísticas de interação.", ephemeral=True)
             return
         
-        user_stats = stats[str(target_user.id)]
+        user_data = data["users"][target_id]
         
         embed = Embed(
-            title=f"{get_emoji(self.bot, 'interaction_stats')} Estatísticas de Interação de {target_user.display_name}",
-            color=DEFAULT_COLOR
+            title=f"📊 Estatísticas de Interação de {target.display_name}",
+            color=Color.gold()
         )
         
-        # Estatísticas enviadas
-        if "sent" in user_stats and user_stats["sent"]:
-            sent_stats = []
-            for interaction_type, targets in sorted(user_stats["sent"].items(), key=lambda x: sum(x[1].values()), reverse=True)[:5]:
-                total = sum(targets.values())
-                sent_stats.append(f"**{interaction_type}**: {total}x")
-            
-            if sent_stats:
-                embed.add_field(
-                    name="Top 5 Interações Enviadas",
-                    value="\n".join(sent_stats),
-                    inline=True
-                )
-        
-        # Estatísticas recebidas
-        if "received" in user_stats and user_stats["received"]:
-            received_stats = []
-            for interaction_type, sources in sorted(user_stats["received"].items(), key=lambda x: sum(x[1].values()), reverse=True)[:5]:
-                total = sum(sources.values())
-                received_stats.append(f"**{interaction_type}**: {total}x")
-            
-            if received_stats:
-                embed.add_field(
-                    name="Top 5 Interações Recebidas",
-                    value="\n".join(received_stats),
-                    inline=True
-                )
-        
-        # Se não houver estatísticas
-        if not embed.fields:
-            embed.description = f"{target_user.mention} tem estatísticas, mas nenhuma interação significativa ainda."
-        
-        embed.set_footer(text="Use /interacao lista para ver todas as interações disponíveis!")
-        await interaction.response.send_message(embed=embed)
-    
-    # Função para gerar dinamicamente os subcomandos de interação
-    async def _create_interaction_command(self, interaction: Interaction, interaction_type: str, target: Member):
-        # Verifica cooldown
-        if not self.check_cooldown(interaction.user.id):
-            remaining_seconds = COOLDOWN_SECONDS - (datetime.now(timezone.utc) - self.cooldowns[interaction.user.id]).total_seconds()
-            await interaction.response.send_message(f"Você precisa esperar mais {remaining_seconds:.1f} segundos para usar outro comando de interação.", ephemeral=True)
-            return
-        
-        # Verifica se o tipo de interação existe
-        if interaction_type not in INTERACTION_GIFS_LOCAL:
-            await interaction.response.send_message(f"Tipo de interação '{interaction_type}' não encontrado.", ephemeral=True)
-            return
-        
-        # Verifica se o alvo é o próprio usuário
-        if target.id == interaction.user.id:
-            await interaction.response.send_message("Você não pode interagir consigo mesmo.", ephemeral=True)
-            return
-        
-        # Verifica se o alvo é um bot
-        if target.bot and target.id != self.bot.user.id:
-            await interaction.response.send_message("Você não pode interagir com outros bots.", ephemeral=True)
-            return
-        
-        # Atualiza cooldown
-        self.update_cooldown(interaction.user.id)
-        
-        # Escolhe um GIF aleatório
-        gif_url = random.choice(INTERACTION_GIFS_LOCAL[interaction_type]["gifs"])
-        
-        # Cria e envia o embed
-        embed = self.create_interaction_embed(interaction_type, interaction.user, target, gif_url)
-        await interaction.response.send_message(embed=embed)
-        
-        # Atualiza estatísticas
-        update_interaction_stats(interaction_type, interaction.user.id, target.id)
-    
-    # Gera dinamicamente os subcomandos para cada tipo de interação
-    for interaction_type, data in INTERACTION_GIFS_LOCAL.items():
-        verb = data["verb"]
-        
-        # Cria o decorador para o subcomando
-        @interacao.subcommand(
-            name=interaction_type,
-            description=f"{verb.capitalize()} alguém."
+        # Estatísticas gerais
+        embed.add_field(
+            name="📤 Total Enviadas",
+            value=str(user_data["total_sent"]),
+            inline=True
         )
-        # Usa o decorator commands.cooldown em vez de application_checks.cooldown
-        @commands.cooldown(1, COOLDOWN_SECONDS, commands.BucketType.user)
-        async def _interaction_command(
+        embed.add_field(
+            name="📥 Total Recebidas",
+            value=str(user_data["total_received"]),
+            inline=True
+        )
+        embed.add_field(
+            name="📊 Proporção (Enviadas/Recebidas)",
+            value=f"{user_data['total_sent'] / max(1, user_data['total_received']):.2f}",
+            inline=True
+        )
+        
+        # Interações enviadas
+        if user_data["sent"]:
+            sent_text = "\n".join([f"{INTERACTIONS[interaction_type]['emoji']} **{interaction_type.capitalize()}**: {count}" for interaction_type, count in sorted(user_data["sent"].items(), key=lambda x: x[1], reverse=True)])
+            embed.add_field(
+                name="📤 Interações Enviadas",
+                value=sent_text,
+                inline=False
+            )
+        
+        # Interações recebidas
+        if user_data["received"]:
+            received_text = "\n".join([f"{INTERACTIONS[interaction_type]['emoji']} **{interaction_type.capitalize()}**: {count}" for interaction_type, count in sorted(user_data["received"].items(), key=lambda x: x[1], reverse=True)])
+            embed.add_field(
+                name="📥 Interações Recebidas",
+                value=received_text,
+                inline=False
+            )
+        
+        # Interação favorita
+        if user_data["sent"]:
+            favorite_sent = max(user_data["sent"].items(), key=lambda x: x[1])
+            embed.add_field(
+                name="❤️ Interação Favorita (Enviada)",
+                value=f"{INTERACTIONS[favorite_sent[0]]['emoji']} **{favorite_sent[0].capitalize()}**: {favorite_sent[1]} vezes",
+                inline=True
+            )
+        
+        if user_data["received"]:
+            favorite_received = max(user_data["received"].items(), key=lambda x: x[1])
+            embed.add_field(
+                name="💝 Interação Favorita (Recebida)",
+                value=f"{INTERACTIONS[favorite_received[0]]['emoji']} **{favorite_received[0].capitalize()}**: {favorite_received[1]} vezes",
+                inline=True
+            )
+        
+        await interaction.response.send_message(embed=embed)
+    
+    # Cria subcomandos dinâmicos para cada tipo de interação
+    for interaction_name, interaction_data in INTERACTIONS.items():
+        @interaction.subcommand(
+            name=interaction_name,
+            description=f"{interaction_data['emoji']} {interaction_name.capitalize()} outro usuário."
+        )
+        async def interaction_command(
             self,
             interaction: Interaction,
-            target: Member = SlashOption(
+            usuario: Member = SlashOption(
                 name="usuario",
                 description="Usuário para interagir",
                 required=True
             ),
-            _interaction_type=interaction_type  # Captura o tipo de interação atual
+            interaction_name=interaction_name,
+            interaction_data=interaction_data
         ):
-            await self._create_interaction_command(interaction, _interaction_type, target)
-    
-    # Tratamento de erros para comandos de aplicação
-    @nextcord.Cog.listener()
-    async def on_application_command_error(self, interaction: Interaction, error):
-        # Verifica se o erro é do comando desta cog
-        # Não podemos mais usar cog_name, então verificamos de outra forma
-        if hasattr(interaction, 'application_command'):
-            # Verifica se o erro é de cooldown
-            if isinstance(error, commands.CommandOnCooldown):
-                await interaction.response.send_message(
-                    f"Você precisa esperar mais {error.retry_after:.1f} segundos para usar este comando novamente.",
-                    ephemeral=True
-                )
+            """Comando de interação dinâmico."""
+            # Verifica se o usuário está tentando interagir consigo mesmo
+            if usuario.id == interaction.user.id:
+                await interaction.response.send_message(f"Você não pode {interaction_name} a si mesmo!", ephemeral=True)
                 return
             
-            # Outros erros específicos da cog
-            try:
-                # Tenta enviar uma mensagem de erro genérica
-                await interaction.response.send_message(
-                    f"{get_emoji(self.bot, 'error')} Ocorreu um erro ao processar o comando: {str(error)}",
-                    ephemeral=True
-                )
-            except nextcord.errors.InteractionResponded:
-                # Se a interação já foi respondida, tenta usar followup
-                try:
-                    await interaction.followup.send(
-                        f"{get_emoji(self.bot, 'error')} Ocorreu um erro ao processar o comando: {str(error)}",
-                        ephemeral=True
-                    )
-                except Exception as e:
-                    # Se tudo falhar, apenas loga o erro
-                    print(f"Erro ao enviar mensagem de erro: {e}")
+            # Verifica cooldown (5 segundos por usuário por tipo de interação)
+            cooldown_key = f"{interaction.user.id}:{interaction_name}:{usuario.id}"
+            current_time = datetime.now(timezone.utc)
             
-            # Loga o erro para debug
-            print(f"Erro em comando de aplicação: {error}")
-            traceback.print_exception(type(error), error, error.__traceback__)
+            if cooldown_key in self.cooldowns:
+                time_diff = (current_time - self.cooldowns[cooldown_key]).total_seconds()
+                if time_diff < 5:
+                    await interaction.response.send_message(f"Aguarde {5 - int(time_diff)} segundos antes de {interaction_name} {usuario.mention} novamente.", ephemeral=True)
+                    return
+            
+            self.cooldowns[cooldown_key] = current_time
+            
+            # Seleciona mensagem e gif aleatórios
+            message = random.choice(interaction_data["messages"]).format(user=interaction.user.mention, target=usuario.mention)
+            gif = random.choice(interaction_data["gifs"])
+            
+            # Cria embed
+            embed = Embed(
+                title=f"{interaction_data['emoji']} {interaction_name.capitalize()}!",
+                description=message,
+                color=Color.blue()
+            )
+            embed.set_image(url=gif)
+            embed.set_footer(text=f"Interação iniciada por {interaction.user.display_name}")
+            
+            # Cria view para retribuir/recusar
+            view = InteractionView(interaction.user, usuario, interaction_name)
+            
+            # Envia mensagem
+            await interaction.response.send_message(embed=embed, view=view)
+            
+            # Salva a mensagem na view para poder editá-la no timeout
+            view.message = await interaction.original_message()
+            
+            # Atualiza estatísticas
+            await update_interaction_stats(interaction.user.id, usuario.id, interaction_name)
 
 # Função setup para carregar a cog
 def setup(bot):
