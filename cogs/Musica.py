@@ -167,7 +167,11 @@ class Musica(commands.Cog):
             logger.info(f"Tentando conectar ao canal de voz: {interaction.user.voice.channel.name} (ID: {interaction.user.voice.channel.id}) para guild {interaction.guild_id}")
             
             # Tenta obter um nó disponível
-            node = self.bot.mafic_pool.get_node()
+            # Corrigido: Usando next(iter()) para obter o primeiro nó disponível
+            node = None
+            if self.bot.mafic_pool.nodes:
+                node = next(iter(self.bot.mafic_pool.nodes), None)
+            
             if not node:
                 logger.error("Nenhum nó Lavalink disponível")
                 return None
