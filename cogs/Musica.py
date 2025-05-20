@@ -46,9 +46,10 @@ class PlayerControls(nextcord.ui.View):
     @nextcord.ui.button(emoji=EMOJIS["volume_down"], style=nextcord.ButtonStyle.danger, row=0, custom_id="volume_down")
     async def volume_down(self, button: nextcord.ui.Button, interaction: Interaction):
         """Diminui o volume em 10%."""
-        if self.player.volume > 0:
-            new_volume = max(0, self.player.volume - 10)
-            await self.player.set_volume(new_volume)
+        current_volume = self.cog.get_player_volume(self.player)
+        if current_volume > 0:
+            new_volume = max(0, current_volume - 10)
+            await self.cog.set_player_volume(self.player, new_volume)
             await interaction.response.send_message(f"{EMOJIS['volume_down']} Volume diminuído para {new_volume}%", ephemeral=True)
             await self.cog.update_now_playing_message(self.player)
         else:
@@ -81,9 +82,10 @@ class PlayerControls(nextcord.ui.View):
     @nextcord.ui.button(emoji=EMOJIS["volume_up"], style=nextcord.ButtonStyle.danger, row=0, custom_id="volume_up")
     async def volume_up(self, button: nextcord.ui.Button, interaction: Interaction):
         """Aumenta o volume em 10%."""
-        if self.player.volume < 100:
-            new_volume = min(100, self.player.volume + 10)
-            await self.player.set_volume(new_volume)
+        current_volume = self.cog.get_player_volume(self.player)
+        if current_volume < 100:
+            new_volume = min(100, current_volume + 10)
+            await self.cog.set_player_volume(self.player, new_volume)
             await interaction.response.send_message(f"{EMOJIS['volume_up']} Volume aumentado para {new_volume}%", ephemeral=True)
             await self.cog.update_now_playing_message(self.player)
         else:
@@ -278,6 +280,22 @@ class Musica(commands.Cog):
     def set_loop_state(self, guild_id: int, state: str):
         """Define o estado de loop para um servidor específico."""
         self.loop_states[guild_id] = state
+        
+    def get_player_volume(self, player):
+        """Obtém o volume do player de forma segura, com fallback para valor padrão."""
+        try:
+            return getattr(player, "volume", 100)
+        except:
+            return 100
+            
+    async def set_player_volume(self, player, volume):
+        """Define o volume do player de forma segura."""
+        try:
+            if hasattr(player, "set_volume"):
+                await player.set_volume(volume)
+        except Exception as e:
+            logger.error(f"Erro ao definir volume: {e}")
+            # Silenciosamente falha se o método não existir
     
     async def get_player(self, interaction: Interaction) -> Optional[mafic.Player]:
         """Obtém ou cria um player para o servidor."""
@@ -596,7 +614,10 @@ class Musica(commands.Cog):
         if loop_state == "track": loop_status = "Faixa"
         elif loop_state == "queue": loop_status = "Fila"
         
-        embed.set_footer(text=f"Volume: {player.volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
+        # Obtém o volume de forma segura
+        volume = self.get_player_volume(player)
+        
+        embed.set_footer(text=f"Volume: {volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
 
         try:
             # Envia a mensagem com o embed e os controles
@@ -657,7 +678,10 @@ class Musica(commands.Cog):
         if loop_state == "track": loop_status = "Faixa"
         elif loop_state == "queue": loop_status = "Fila"
         
-        embed.set_footer(text=f"Volume: {player.volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
+        # Obtém o volume de forma segura
+        volume = self.get_player_volume(player)
+        
+        embed.set_footer(text=f"Volume: {volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
 
         try:
             # Envia a mensagem com o embed e os controles
@@ -740,7 +764,10 @@ class Musica(commands.Cog):
         if loop_state == "track": loop_status = "Faixa"
         elif loop_state == "queue": loop_status = "Fila"
         
-        embed.set_footer(text=f"Volume: {player.volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
+        # Obtém o volume de forma segura
+        volume = self.get_player_volume(player)
+        
+        embed.set_footer(text=f"Volume: {volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
 
         try:
             # Atualiza a mensagem com o novo embed e os controles
@@ -831,7 +858,10 @@ class Musica(commands.Cog):
         elif loop_state == "queue": loop_status = "Fila Inteira"
         
         embed.add_field(name=f"{EMOJIS['loop']} Loop", value=loop_status, inline=True)
-        embed.add_field(name=f"{EMOJIS['volume_up']} Volume", value=f"{player.volume}%", inline=True)
+        
+        # Obtém o volume de forma segura
+        volume = self.get_player_volume(player)
+        embed.add_field(name=f"{EMOJIS['volume_up']} Volume", value=f"{volume}%", inline=True)
         
         if player.paused:
             embed.add_field(name="⏸️ Status", value="Pausado", inline=True)
@@ -946,7 +976,8 @@ class Musica(commands.Cog):
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
 
-        await player.set_volume(volume)
+        # Define o volume de forma segura
+        await self.set_player_volume(player, volume)
         
         emoji = EMOJIS["volume_up"] if volume >= 50 else EMOJIS["volume_down"]
         await interaction.response.send_message(f"{emoji} Volume ajustado para {volume}%!")
