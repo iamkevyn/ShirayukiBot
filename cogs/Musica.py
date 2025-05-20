@@ -1,5 +1,5 @@
 # /home/ubuntu/ShirayukiBot/cogs/Musica.py
-# Cog de Música reescrita para usar Mafic
+# Cog de Música reescrita para usar Mafic com painel estilizado
 
 import nextcord
 from nextcord import Interaction, SlashOption, ChannelType
@@ -21,6 +21,23 @@ URL_REGEX = re.compile(
     r"([a-zA-Z0-9_-]+)"
 )
 SEARCH_TERM_REGEX = re.compile(r"^.{3,500}$") # Termos de busca genéricos
+
+# Emojis estilizados para o player (vermelho e branco)
+EMOJIS = {
+    "play": "▶️",
+    "pause": "⏸️",
+    "stop": "⏹️",
+    "skip": "⏭️",
+    "back": "⏮️",
+    "shuffle": "🔀",
+    "loop": "🔁",
+    "volume_up": "🔊",
+    "volume_down": "🔉",
+    "playlist": "📋",
+    "autoplay": "♾️",
+    "music": "🎵",
+    "heart": "❤️"
+}
 
 class CustomQueue:
     """Implementação personalizada de fila para substituir player.queue."""
@@ -72,7 +89,7 @@ class PlayerControls(nextcord.ui.View):
         self.player = player
         self.cog = cog_instance
 
-    @nextcord.ui.button(label="⏯️ Pausar/Continuar", style=nextcord.ButtonStyle.primary, row=0)
+    @nextcord.ui.button(emoji=EMOJIS["pause"], style=nextcord.ButtonStyle.danger, row=0)
     async def pause_resume(self, button: nextcord.ui.Button, interaction: Interaction):
         if not self.player or not self.player.current:
             await interaction.response.send_message("Não há nada tocando para pausar/continuar.", ephemeral=True)
@@ -80,13 +97,25 @@ class PlayerControls(nextcord.ui.View):
 
         if self.player.paused:
             await self.player.resume()
+            button.emoji = EMOJIS["play"]
             await interaction.response.send_message("▶️ Música retomada!", ephemeral=True)
         else:
             await self.player.pause()
+            button.emoji = EMOJIS["pause"]
             await interaction.response.send_message("⏸️ Música pausada!", ephemeral=True)
         await self.cog.update_now_playing_message(self.player)
 
-    @nextcord.ui.button(label="⏭️ Pular", style=nextcord.ButtonStyle.secondary, row=0)
+    @nextcord.ui.button(emoji=EMOJIS["back"], style=nextcord.ButtonStyle.secondary, row=0)
+    async def back(self, button: nextcord.ui.Button, interaction: Interaction):
+        if not self.player or not self.player.current:
+            await interaction.response.send_message("Não há nada tocando para voltar.", ephemeral=True)
+            return
+            
+        # Implementação básica de "voltar" - na verdade reinicia a música atual
+        await self.player.seek(0)
+        await interaction.response.send_message("⏮️ Voltando ao início da música!", ephemeral=True)
+
+    @nextcord.ui.button(emoji=EMOJIS["skip"], style=nextcord.ButtonStyle.secondary, row=0)
     async def skip(self, button: nextcord.ui.Button, interaction: Interaction):
         if not self.player or not self.player.current:
             await interaction.response.send_message("Não há nada tocando para pular.", ephemeral=True)
@@ -95,7 +124,7 @@ class PlayerControls(nextcord.ui.View):
         await interaction.response.send_message("⏭️ Música pulada!", ephemeral=True)
         # A mensagem de "agora tocando" será atualizada pelo evento on_track_end/on_track_start
 
-    @nextcord.ui.button(label="⏹️ Parar e Limpar", style=nextcord.ButtonStyle.danger, row=0)
+    @nextcord.ui.button(emoji=EMOJIS["stop"], style=nextcord.ButtonStyle.danger, row=0)
     async def stop_clear(self, button: nextcord.ui.Button, interaction: Interaction):
         if not self.player:
             await interaction.response.send_message("O player não está ativo.", ephemeral=True)
@@ -144,7 +173,20 @@ class PlayerControls(nextcord.ui.View):
             except Exception as e:
                 logger.error(f"Erro ao limpar mensagem 'agora tocando' para guild {interaction.guild_id}: {e}")
 
-    @nextcord.ui.button(label="🔁 Loop Faixa/Fila/Off", style=nextcord.ButtonStyle.secondary, row=1)
+    @nextcord.ui.button(emoji=EMOJIS["volume_down"], style=nextcord.ButtonStyle.secondary, row=1)
+    async def volume_down(self, button: nextcord.ui.Button, interaction: Interaction):
+        if not self.player:
+            await interaction.response.send_message("O player não está ativo.", ephemeral=True)
+            return
+            
+        # Diminui o volume em 10%
+        current_volume = self.player.volume
+        new_volume = max(0, current_volume - 10)
+        await self.player.set_volume(new_volume)
+        await interaction.response.send_message(f"🔉 Volume diminuído para {new_volume}%", ephemeral=True)
+        await self.cog.update_now_playing_message(self.player)
+
+    @nextcord.ui.button(emoji=EMOJIS["loop"], style=nextcord.ButtonStyle.secondary, row=1)
     async def loop_mode(self, button: nextcord.ui.Button, interaction: Interaction):
         if not self.player:
             await interaction.response.send_message("O player não está ativo.", ephemeral=True)
@@ -165,7 +207,20 @@ class PlayerControls(nextcord.ui.View):
             
         await self.cog.update_now_playing_message(self.player)
 
-    @nextcord.ui.button(label="🔀 Shuffle", style=nextcord.ButtonStyle.secondary, row=1)
+    @nextcord.ui.button(emoji=EMOJIS["volume_up"], style=nextcord.ButtonStyle.secondary, row=1)
+    async def volume_up(self, button: nextcord.ui.Button, interaction: Interaction):
+        if not self.player:
+            await interaction.response.send_message("O player não está ativo.", ephemeral=True)
+            return
+            
+        # Aumenta o volume em 10%
+        current_volume = self.player.volume
+        new_volume = min(100, current_volume + 10)
+        await self.player.set_volume(new_volume)
+        await interaction.response.send_message(f"🔊 Volume aumentado para {new_volume}%", ephemeral=True)
+        await self.cog.update_now_playing_message(self.player)
+
+    @nextcord.ui.button(emoji=EMOJIS["shuffle"], style=nextcord.ButtonStyle.secondary, row=2)
     async def shuffle_queue(self, button: nextcord.ui.Button, interaction: Interaction):
         guild_id = interaction.guild_id
         if guild_id not in self.cog.queues or not self.cog.queues[guild_id]:
@@ -175,6 +230,113 @@ class PlayerControls(nextcord.ui.View):
         self.cog.queues[guild_id].shuffle()
         await interaction.response.send_message("🔀 Fila embaralhada!", ephemeral=True)
         await self.cog.update_now_playing_message(self.player) # Para atualizar a exibição da fila se estiver visível
+
+    @nextcord.ui.button(emoji=EMOJIS["playlist"], style=nextcord.ButtonStyle.secondary, row=2)
+    async def show_queue(self, button: nextcord.ui.Button, interaction: Interaction):
+        guild_id = interaction.guild_id
+        if guild_id not in self.cog.queues or not self.cog.queues[guild_id]:
+            await interaction.response.send_message("A fila está vazia.", ephemeral=True)
+            return
+            
+        # Mostra a fila atual
+        queue = self.cog.queues[guild_id]
+        
+        embed = nextcord.Embed(
+            title="🎵 Fila de Músicas",
+            color=nextcord.Color.red()
+        )
+
+        # Informações da música atual
+        if self.player.current:
+            # Obtém o requester da faixa atual
+            requester = self.cog.get_requester(guild_id, self.player.current)
+            requester_mention = requester.mention if requester else "Desconhecido"
+            
+            embed.add_field(
+                name="🎶 Tocando Agora",
+                value=f"**[{self.player.current.title}]({self.player.current.uri})** ({self.cog.format_duration(self.player.current.length)})\n"
+                      f"Adicionado por: {requester_mention}",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🎶 Tocando Agora",
+                value="Nada tocando no momento.",
+                inline=False
+            )
+
+        # Lista de músicas na fila
+        if queue:
+            queue_list = []
+            for i, track in enumerate(queue[:10]):  # Limita a 10 músicas para não sobrecarregar o embed
+                # Obtém o requester da faixa
+                requester = self.cog.get_requester(guild_id, track)
+                requester_mention = requester.mention if requester else "Desconhecido"
+                
+                queue_list.append(f"**{i+1}.** [{track.title}]({track.uri}) ({self.cog.format_duration(track.length)}) - {requester_mention}")
+            
+            remaining = len(queue) - 10
+            queue_text = "\n".join(queue_list)
+            if remaining > 0:
+                queue_text += f"\n\n*E mais {remaining} música(s)...*"
+            
+            embed.add_field(
+                name=f"📋 Próximas na Fila ({len(queue)})",
+                value=queue_text,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="📋 Próximas na Fila",
+                value="A fila está vazia. Adicione músicas com `/tocar`!",
+                inline=False
+            )
+
+        # Informações adicionais
+        loop_status = "Desativado"
+        loop_state = self.cog.get_loop_state(guild_id)
+        if loop_state == "track": loop_status = "Faixa Atual"
+        elif loop_state == "queue": loop_status = "Fila Inteira"
+        
+        embed.add_field(name="🔁 Loop", value=loop_status, inline=True)
+        embed.add_field(name="🔊 Volume", value=f"{self.player.volume}%", inline=True)
+        
+        if self.player.paused:
+            embed.add_field(name="⏸️ Status", value="Pausado", inline=True)
+        else:
+            embed.add_field(name="▶️ Status", value="Tocando", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @nextcord.ui.button(emoji=EMOJIS["autoplay"], style=nextcord.ButtonStyle.secondary, row=2)
+    async def autoplay(self, button: nextcord.ui.Button, interaction: Interaction):
+        # Implementação básica de autoplay - na verdade apenas uma mensagem informativa
+        await interaction.response.send_message("♾️ Autoplay não está disponível nesta versão do bot.", ephemeral=True)
+
+class MusicPanel(nextcord.ui.View):
+    """Painel estilizado para exibição da música atual."""
+    def __init__(self, player, cog_instance):
+        super().__init__(timeout=None)
+        self.player = player
+        self.cog = cog_instance
+        self.add_controls()
+        
+    def add_controls(self):
+        # Primeira linha: controles básicos
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["volume_down"], style=nextcord.ButtonStyle.danger, row=0, custom_id="volume_down"))
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["back"], style=nextcord.ButtonStyle.danger, row=0, custom_id="back"))
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["pause"], style=nextcord.ButtonStyle.danger, row=0, custom_id="pause"))
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["skip"], style=nextcord.ButtonStyle.danger, row=0, custom_id="skip"))
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["volume_up"], style=nextcord.ButtonStyle.danger, row=0, custom_id="volume_up"))
+        
+        # Segunda linha: controles adicionais
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["shuffle"], style=nextcord.ButtonStyle.danger, row=1, custom_id="shuffle"))
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["loop"], style=nextcord.ButtonStyle.danger, row=1, custom_id="loop"))
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["stop"], style=nextcord.ButtonStyle.danger, row=1, custom_id="stop"))
+        
+        # Terceira linha: playlist e autoplay
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["autoplay"], style=nextcord.ButtonStyle.danger, row=2, custom_id="autoplay"))
+        self.add_item(nextcord.ui.Button(emoji=EMOJIS["playlist"], style=nextcord.ButtonStyle.danger, row=2, custom_id="playlist"))
 
 class Musica(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -396,14 +558,38 @@ class Musica(commands.Cog):
                     return
             elif is_search_term:
                 logger.info(f"Buscando por termo: {busca} para guild {interaction.guild_id}")
-                # Para termos de busca, usamos fetch_tracks com prefixo ytsearch:
+                # Para termos de busca, tentamos várias abordagens
                 try:
-                    # Corrigido: Usando fetch_tracks com prefixo ytsearch: para busca
-                    search_query = f"ytsearch:{busca}"  # Formato para busca no YouTube
+                    # Tentativa 1: ytsearch:
+                    search_query = f"ytsearch:{busca}"
                     tracks = await player.fetch_tracks(search_query)
+                    
+                    # Se não encontrou nada, tenta outras abordagens
+                    if not tracks:
+                        # Tentativa 2: scsearch:
+                        search_query = f"scsearch:{busca}"
+                        tracks = await player.fetch_tracks(search_query)
+                        
+                    # Se ainda não encontrou, tenta uma busca direta no YouTube
+                    if not tracks:
+                        # Tentativa 3: URL direta do YouTube com o termo
+                        search_query = f"https://www.youtube.com/results?search_query={busca.replace(' ', '+')}"
+                        tracks = await player.fetch_tracks(search_query)
+                        
+                    # Se todas as tentativas falharam, informa ao usuário
+                    if not tracks:
+                        await interaction.followup.send(
+                            "Não foi possível encontrar resultados para sua busca. Tente usar um link direto do YouTube ou SoundCloud.", 
+                            ephemeral=True
+                        )
+                        return
+                        
                 except mafic.errors.HTTPNotFound as e:
                     logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
-                    await interaction.followup.send("Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
+                    await interaction.followup.send(
+                        "O servidor de música não conseguiu processar sua busca. Tente usar um link direto do YouTube ou SoundCloud.", 
+                        ephemeral=True
+                    )
                     return
                 except Exception as e:
                     logger.error(f"Erro ao buscar faixas por termo: {e}")
@@ -485,74 +671,80 @@ class Musica(commands.Cog):
 
     async def update_now_playing_message(self, player: mafic.Player):
         """Atualiza a mensagem de 'agora tocando'."""
-        if not player or not player.guild_id or not player.current:
+        if not player or not player.guild or not player.current:
             return
 
-        message_info = self.now_playing_messages.get(player.guild_id)
+        guild_id = player.guild.id  # Corrigido: Usando player.guild.id em vez de player.guild_id
+        
+        message_info = self.now_playing_messages.get(guild_id)
         if not message_info:
             return
 
         msg_id, channel_id = message_info
         channel = self.bot.get_channel(channel_id)
         if not channel or not isinstance(channel, nextcord.TextChannel):
-            logger.warning(f"Canal não encontrado ou não é canal de texto para guild {player.guild_id} ao atualizar NP.")
+            logger.warning(f"Canal não encontrado ou não é canal de texto para guild {guild_id} ao atualizar NP.")
             return
 
         try:
             message = await channel.fetch_message(msg_id)
         except nextcord.NotFound:
-            logger.warning(f"Mensagem 'agora tocando' (ID: {msg_id}) não encontrada para guild {player.guild_id} ao atualizar.")
+            logger.warning(f"Mensagem 'agora tocando' (ID: {msg_id}) não encontrada para guild {guild_id} ao atualizar.")
             # Se a mensagem não existe mais, limpa a referência
-            del self.now_playing_messages[player.guild_id]
+            del self.now_playing_messages[guild_id]
             return
         except Exception as e:
-            logger.error(f"Erro ao buscar mensagem 'agora tocando' para guild {player.guild_id}: {e}")
+            logger.error(f"Erro ao buscar mensagem 'agora tocando' para guild {guild_id}: {e}")
             return
 
         current_track = player.current
+        
+        # Cria um embed estilizado para o painel de música
         embed = nextcord.Embed(
-            title=f"🎶 Tocando Agora", 
-            description=f"**[{current_track.title}]({current_track.uri})**", 
-            color=nextcord.Color.blue()
+            title=f"{EMOJIS['music']} MUSIC PANEL",
+            description=f"**[{current_track.title}]({current_track.uri})**",
+            color=nextcord.Color.red()  # Cor vermelha para combinar com os botões
         )
-        embed.add_field(name="Duração", value=self.format_duration(current_track.length), inline=True)
-        embed.add_field(name="Autor", value=current_track.author, inline=True)
-        
-        # Obtém o estado de loop para este servidor
-        loop_status = "Desativado"
-        loop_state = self.get_loop_state(player.guild_id)
-        if loop_state == "track": loop_status = "Faixa Atual"
-        elif loop_state == "queue": loop_status = "Fila Inteira"
-        embed.add_field(name="Loop", value=loop_status, inline=True)
-
-        if current_track.artwork_url:
-            embed.set_thumbnail(url=current_track.artwork_url)
-        
-        # Obtém a fila personalizada para este servidor
-        queue = self.get_queue(player.guild_id)
-        
-        queue_display = []
-        if queue:
-            for i, item in enumerate(queue[:5]): # Mostra as próximas 5
-                queue_display.append(f"{i+1}. {item.title} ({self.format_duration(item.length)})")
-        
-        embed.add_field(name=f"Próximas na Fila ({len(queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
         
         # Obtém o requester da faixa atual
-        requester = self.get_requester(player.guild_id, current_track)
+        requester = self.get_requester(guild_id, current_track)
         
-        # Define o footer com o requester
-        if requester:
-            embed.set_footer(text=f"Adicionado por: {requester.display_name}", 
-                            icon_url=requester.display_avatar.url)
-        else:
-            embed.set_footer(text=f"Adicionado por: Desconhecido", 
-                            icon_url=self.bot.user.display_avatar.url)
+        # Adiciona campos para Requested By, Duration e Music Author
+        embed.add_field(
+            name="Requested By",
+            value=f"{requester.mention if requester else 'Desconhecido'}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Duration",
+            value=self.format_duration(current_track.length),
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Music Author",
+            value=current_track.author,
+            inline=True
+        )
+        
+        # Define a thumbnail como a artwork da música, se disponível
+        if current_track.artwork_url:
+            embed.set_thumbnail(url=current_track.artwork_url)
+            
+        # Adiciona o footer com informações adicionais
+        loop_status = "Desativado"
+        loop_state = self.get_loop_state(guild_id)
+        if loop_state == "track": loop_status = "Faixa"
+        elif loop_state == "queue": loop_status = "Fila"
+        
+        embed.set_footer(text=f"Volume: {player.volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
 
         try:
+            # Atualiza a mensagem com o novo embed e os controles
             await message.edit(content=None, embed=embed, view=PlayerControls(player, self))
         except Exception as e:
-            logger.error(f"Erro ao atualizar mensagem 'agora tocando' para guild {player.guild_id}: {e}")
+            logger.error(f"Erro ao atualizar mensagem 'agora tocando' para guild {guild_id}: {e}")
 
     def format_duration(self, milliseconds: int) -> str:
         """Formata duração de milissegundos para HH:MM:SS ou MM:SS."""
@@ -580,8 +772,8 @@ class Musica(commands.Cog):
         queue = self.get_queue(interaction.guild_id)
 
         embed = nextcord.Embed(
-            title="🎵 Fila de Músicas",
-            color=nextcord.Color.blue()
+            title=f"{EMOJIS['music']} Fila de Músicas",
+            color=nextcord.Color.red()
         )
 
         # Informações da música atual
@@ -591,14 +783,14 @@ class Musica(commands.Cog):
             requester_mention = requester.mention if requester else "Desconhecido"
             
             embed.add_field(
-                name="🎶 Tocando Agora",
+                name=f"{EMOJIS['music']} Tocando Agora",
                 value=f"**[{player.current.title}]({player.current.uri})** ({self.format_duration(player.current.length)})\n"
                       f"Adicionado por: {requester_mention}",
                 inline=False
             )
         else:
             embed.add_field(
-                name="🎶 Tocando Agora",
+                name=f"{EMOJIS['music']} Tocando Agora",
                 value="Nada tocando no momento.",
                 inline=False
             )
@@ -619,13 +811,13 @@ class Musica(commands.Cog):
                 queue_text += f"\n\n*E mais {remaining} música(s)...*"
             
             embed.add_field(
-                name=f"📋 Próximas na Fila ({len(queue)})",
+                name=f"{EMOJIS['playlist']} Próximas na Fila ({len(queue)})",
                 value=queue_text,
                 inline=False
             )
         else:
             embed.add_field(
-                name="📋 Próximas na Fila",
+                name=f"{EMOJIS['playlist']} Próximas na Fila",
                 value="A fila está vazia. Adicione músicas com `/tocar`!",
                 inline=False
             )
@@ -636,13 +828,13 @@ class Musica(commands.Cog):
         if loop_state == "track": loop_status = "Faixa Atual"
         elif loop_state == "queue": loop_status = "Fila Inteira"
         
-        embed.add_field(name="🔁 Loop", value=loop_status, inline=True)
-        embed.add_field(name="🔊 Volume", value=f"{player.volume}%", inline=True)
+        embed.add_field(name=f"{EMOJIS['loop']} Loop", value=loop_status, inline=True)
+        embed.add_field(name=f"{EMOJIS['volume_up']} Volume", value=f"{player.volume}%", inline=True)
         
         if player.paused:
-            embed.add_field(name="⏸️ Status", value="Pausado", inline=True)
+            embed.add_field(name=f"{EMOJIS['pause']} Status", value="Pausado", inline=True)
         else:
-            embed.add_field(name="▶️ Status", value="Tocando", inline=True)
+            embed.add_field(name=f"{EMOJIS['play']} Status", value="Tocando", inline=True)
 
         await interaction.response.send_message(embed=embed)
 
@@ -659,7 +851,7 @@ class Musica(commands.Cog):
             return
 
         await player.stop()  # Mafic lida com a próxima música da fila automaticamente
-        await interaction.response.send_message("⏭️ Música pulada!")
+        await interaction.response.send_message(f"{EMOJIS['skip']} Música pulada!")
         # A mensagem de "agora tocando" será atualizada pelo evento on_track_end/on_track_start
 
     @nextcord.slash_command(name="pausar", description="Pausa a música atual.")
@@ -679,7 +871,7 @@ class Musica(commands.Cog):
             return
 
         await player.pause()
-        await interaction.response.send_message("⏸️ Música pausada!")
+        await interaction.response.send_message(f"{EMOJIS['pause']} Música pausada!")
         await self.update_now_playing_message(player)
 
     @nextcord.slash_command(name="continuar", description="Continua a música pausada.")
@@ -699,7 +891,7 @@ class Musica(commands.Cog):
             return
 
         await player.resume()
-        await interaction.response.send_message("▶️ Música retomada!")
+        await interaction.response.send_message(f"{EMOJIS['play']} Música retomada!")
         await self.update_now_playing_message(player)
 
     @nextcord.slash_command(name="parar", description="Para a música e limpa a fila.")
@@ -740,7 +932,7 @@ class Musica(commands.Cog):
         if interaction.guild_id in self.loop_states:
             del self.loop_states[interaction.guild_id]
 
-        await interaction.response.send_message("⏹️ Player parado, fila limpa e bot desconectado.")
+        await interaction.response.send_message(f"{EMOJIS['stop']} Player parado, fila limpa e bot desconectado.")
 
         if self.now_playing_messages.get(interaction.guild_id):
             try:
@@ -778,7 +970,8 @@ class Musica(commands.Cog):
             return
 
         await player.set_volume(nivel)
-        await interaction.response.send_message(f"🔊 Volume ajustado para {nivel}%.")
+        await interaction.response.send_message(f"{EMOJIS['volume_up']} Volume ajustado para {nivel}%.")
+        await self.update_now_playing_message(player)
 
     @nextcord.slash_command(name="loop", description="Alterna entre modos de loop (desativado, faixa, fila).")
     async def loop(
@@ -805,11 +998,11 @@ class Musica(commands.Cog):
         self.set_loop_state(interaction.guild_id, modo)
         
         if modo == "none":
-            await interaction.response.send_message("🔁 Loop desativado.")
+            await interaction.response.send_message(f"{EMOJIS['loop']} Loop desativado.")
         elif modo == "track":
-            await interaction.response.send_message("🔁 Loop da faixa atual ativado.")
+            await interaction.response.send_message(f"{EMOJIS['loop']} Loop da faixa atual ativado.")
         elif modo == "queue":
-            await interaction.response.send_message("🔁 Loop da fila inteira ativado.")
+            await interaction.response.send_message(f"{EMOJIS['loop']} Loop da fila inteira ativado.")
 
         await self.update_now_playing_message(player)
 
@@ -833,7 +1026,7 @@ class Musica(commands.Cog):
             return
 
         queue.shuffle()
-        await interaction.response.send_message("🔀 Fila embaralhada!")
+        await interaction.response.send_message(f"{EMOJIS['shuffle']} Fila embaralhada!")
         await self.update_now_playing_message(player)
 
     @nextcord.slash_command(name="reconectar", description="Força a reconexão do bot ao servidor de música.")
@@ -864,52 +1057,55 @@ class Musica(commands.Cog):
         if not player.guild:
             return
 
-        logger.info(f"Faixa iniciada: {track.title} em {player.guild.name} ({player.guild.id})")
+        guild_id = player.guild.id  # Corrigido: Usando player.guild.id em vez de player.guild_id
+        logger.info(f"Faixa iniciada: {track.title} em {player.guild.name} ({guild_id})")
 
         # Cria ou atualiza a mensagem de "agora tocando"
+        # Cria um embed estilizado para o painel de música
         embed = nextcord.Embed(
-            title=f"🎶 Tocando Agora",
+            title=f"{EMOJIS['music']} MUSIC PANEL",
             description=f"**[{track.title}]({track.uri})**",
-            color=nextcord.Color.blue()
+            color=nextcord.Color.red()  # Cor vermelha para combinar com os botões
         )
-        embed.add_field(name="Duração", value=self.format_duration(track.length), inline=True)
-        embed.add_field(name="Autor", value=track.author, inline=True)
-        
-        # Obtém o estado de loop para este servidor
-        loop_status = "Desativado"
-        loop_state = self.get_loop_state(player.guild.id)
-        if loop_state == "track": loop_status = "Faixa Atual"
-        elif loop_state == "queue": loop_status = "Fila Inteira"
-        embed.add_field(name="Loop", value=loop_status, inline=True)
-
-        if track.artwork_url:
-            embed.set_thumbnail(url=track.artwork_url)
-        
-        # Obtém a fila personalizada para este servidor
-        queue = self.get_queue(player.guild.id)
-        
-        queue_display = []
-        if queue:
-            for i, item in enumerate(queue[:5]):  # Mostra as próximas 5
-                queue_display.append(f"{i+1}. {item.title} ({self.format_duration(item.length)})")
-        
-        embed.add_field(name=f"Próximas na Fila ({len(queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
         
         # Obtém o requester da faixa atual
-        requester = self.get_requester(player.guild.id, track)
+        requester = self.get_requester(guild_id, track)
         
-        # Define o footer com o requester
-        if requester:
-            embed.set_footer(text=f"Adicionado por: {requester.display_name}", 
-                            icon_url=requester.display_avatar.url)
-        else:
-            embed.set_footer(text=f"Adicionado por: Desconhecido", 
-                            icon_url=self.bot.user.display_avatar.url)
+        # Adiciona campos para Requested By, Duration e Music Author
+        embed.add_field(
+            name="Requested By",
+            value=f"{requester.mention if requester else 'Desconhecido'}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Duration",
+            value=self.format_duration(track.length),
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Music Author",
+            value=track.author,
+            inline=True
+        )
+        
+        # Define a thumbnail como a artwork da música, se disponível
+        if track.artwork_url:
+            embed.set_thumbnail(url=track.artwork_url)
+            
+        # Adiciona o footer com informações adicionais
+        loop_status = "Desativado"
+        loop_state = self.get_loop_state(guild_id)
+        if loop_state == "track": loop_status = "Faixa"
+        elif loop_state == "queue": loop_status = "Fila"
+        
+        embed.set_footer(text=f"Volume: {player.volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
 
         # Verifica se já existe uma mensagem de "agora tocando" para este servidor
-        if player.guild.id in self.now_playing_messages:
+        if guild_id in self.now_playing_messages:
             try:
-                msg_id, channel_id = self.now_playing_messages[player.guild.id]
+                msg_id, channel_id = self.now_playing_messages[guild_id]
                 channel = self.bot.get_channel(channel_id)
                 if channel:
                     try:
@@ -920,16 +1116,16 @@ class Musica(commands.Cog):
                         # Mensagem não encontrada, vamos criar uma nova
                         pass
                     except Exception as e:
-                        logger.error(f"Erro ao editar mensagem 'agora tocando' para guild {player.guild.id}: {e}")
+                        logger.error(f"Erro ao editar mensagem 'agora tocando' para guild {guild_id}: {e}")
             except Exception as e:
-                logger.error(f"Erro ao processar mensagem 'agora tocando' existente para guild {player.guild.id}: {e}")
+                logger.error(f"Erro ao processar mensagem 'agora tocando' existente para guild {guild_id}: {e}")
 
         # Se chegou aqui, precisamos criar uma nova mensagem
         # Encontra o canal de texto mais adequado para enviar a mensagem
         text_channel = None
         
         # Tenta encontrar o canal onde o comando foi executado
-        requester = self.get_requester(player.guild.id, track)
+        requester = self.get_requester(guild_id, track)
         if requester and isinstance(requester, nextcord.Member):
             for channel in player.guild.text_channels:
                 if channel.permissions_for(player.guild.me).send_messages and channel.permissions_for(requester).read_messages:
@@ -953,10 +1149,10 @@ class Musica(commands.Cog):
         if text_channel:
             try:
                 message = await text_channel.send(embed=embed, view=PlayerControls(player, self))
-                self.now_playing_messages[player.guild.id] = (message.id, text_channel.id)
-                logger.info(f"Nova mensagem 'agora tocando' criada para guild {player.guild.id} no canal {text_channel.name}")
+                self.now_playing_messages[guild_id] = (message.id, text_channel.id)
+                logger.info(f"Nova mensagem 'agora tocando' criada para guild {guild_id} no canal {text_channel.name}")
             except Exception as e:
-                logger.error(f"Erro ao criar mensagem 'agora tocando' para guild {player.guild.id}: {e}")
+                logger.error(f"Erro ao criar mensagem 'agora tocando' para guild {guild_id}: {e}")
 
     @commands.Cog.listener()
     async def on_mafic_track_end(self, player: mafic.Player, track: mafic.Track, reason: str):
@@ -967,7 +1163,7 @@ class Musica(commands.Cog):
         if not player or not player.guild:
             return
             
-        guild_id = player.guild.id
+        guild_id = player.guild.id  # Corrigido: Usando player.guild.id em vez de player.guild_id
         
         # Obtém o estado de loop para este servidor
         loop_state = self.get_loop_state(guild_id)
