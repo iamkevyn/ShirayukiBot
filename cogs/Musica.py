@@ -593,6 +593,29 @@ class Musica(commands.Cog):
             # Obtém a fila personalizada para este servidor
             queue = self.get_queue(interaction.guild_id)
 
+            # Cria o painel estilizado ANTES de adicionar à fila
+            # Isso garante que o painel sempre apareça, independente do estado do player
+            if player.current:
+                # Se já está tocando algo, atualizamos o painel existente
+                await self.update_now_playing_message(player)
+            else:
+                # Se não está tocando nada, criamos um painel temporário que será atualizado quando a música começar
+                # Vamos criar um painel inicial com a primeira música que será adicionada
+                if isinstance(tracks, mafic.Playlist) and tracks.tracks:
+                    temp_track = tracks.tracks[0]
+                    self.set_requester(interaction.guild_id, temp_track, interaction.user)
+                    # Armazenamos temporariamente para poder criar o painel
+                    player.current = temp_track
+                    await self.create_now_playing_panel(interaction.channel, player)
+                    player.current = None  # Restauramos o estado original
+                elif isinstance(tracks, list) and tracks:
+                    temp_track = tracks[0]
+                    self.set_requester(interaction.guild_id, temp_track, interaction.user)
+                    # Armazenamos temporariamente para poder criar o painel
+                    player.current = temp_track
+                    await self.create_now_playing_panel(interaction.channel, player)
+                    player.current = None  # Restauramos o estado original
+            
             # Adiciona o requester às faixas usando nosso sistema de armazenamento separado
             if isinstance(tracks, mafic.Playlist):
                 for track in tracks.tracks:
@@ -605,13 +628,6 @@ class Musica(commands.Cog):
                 # Envia mensagem de confirmação
                 confirm_msg = await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!")
                 
-                # Cria o painel estilizado imediatamente após adicionar à fila
-                if not player.current and queue:
-                    # Se não está tocando nada ainda, vamos criar o painel após iniciar a reprodução
-                    pass
-                else:
-                    # Se já está tocando algo, criamos o painel agora mesmo
-                    await self.create_now_playing_panel(interaction.channel, player)
             elif isinstance(tracks, list) and tracks: # Lista de faixas (resultado de busca)
                 if is_search_term: # Se foi uma busca, geralmente pegamos a primeira e adicionamos
                     track_to_add = tracks[0]
@@ -624,13 +640,6 @@ class Musica(commands.Cog):
                     # Envia mensagem de confirmação
                     confirm_msg = await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!")
                     
-                    # Cria o painel estilizado imediatamente após adicionar à fila
-                    if not player.current and queue:
-                        # Se não está tocando nada ainda, vamos criar o painel após iniciar a reprodução
-                        pass
-                    else:
-                        # Se já está tocando algo, criamos o painel agora mesmo
-                        await self.create_now_playing_panel(interaction.channel, player)
                 else: # Se foi uma URL de faixa única que retornou uma lista (improvável, mas para cobrir)
                     for track in tracks:
                         # Armazena o requester para cada faixa
@@ -641,14 +650,6 @@ class Musica(commands.Cog):
                     
                     # Envia mensagem de confirmação
                     confirm_msg = await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!")
-                    
-                    # Cria o painel estilizado imediatamente após adicionar à fila
-                    if not player.current and queue:
-                        # Se não está tocando nada ainda, vamos criar o painel após iniciar a reprodução
-                        pass
-                    else:
-                        # Se já está tocando algo, criamos o painel agora mesmo
-                        await self.create_now_playing_panel(interaction.channel, player)
             else:
                 await interaction.followup.send(f"Não foi possível processar o resultado para: `{busca}`", ephemeral=True)
                 return
