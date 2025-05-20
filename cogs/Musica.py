@@ -248,15 +248,9 @@ class Musica(commands.Cog):
             is_search_term = bool(SEARCH_TERM_REGEX.match(busca)) and not is_url
 
             tracks: Union[mafic.Playlist, List[mafic.Track], None] = None
-            
-            # Corrigido: Removendo referência a mafic.Source que não existe em algumas versões
-            # Usaremos strings diretamente para compatibilidade
-            source_type = "youtube"  # Padrão para busca
 
             if is_url:
                 logger.info(f"Buscando por URL: {busca} para guild {interaction.guild_id}")
-                if "soundcloud.com" in busca:
-                    source_type = "soundcloud"
                 # Para URLs, incluindo playlists, fetch_tracks é geralmente o melhor
                 try:
                     tracks = await player.fetch_tracks(busca)  # Deixa Mafic decidir a fonte pela URL
@@ -270,11 +264,11 @@ class Musica(commands.Cog):
                     return
             elif is_search_term:
                 logger.info(f"Buscando por termo: {busca} para guild {interaction.guild_id}")
-                # Para termos de busca, usamos search_tracks e especificamos a fonte (ou deixamos padrão)
+                # Para termos de busca, usamos fetch_tracks com prefixo ytsearch:
                 try:
-                    # Corrigido: Usando string direta em vez de mafic.Source
+                    # Corrigido: Usando fetch_tracks com prefixo ytsearch: para busca
                     search_query = f"ytsearch:{busca}"  # Formato para busca no YouTube
-                    tracks = await player.search_tracks(search_query)
+                    tracks = await player.fetch_tracks(search_query)
                 except mafic.errors.HTTPNotFound as e:
                     logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
                     await interaction.followup.send("Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
