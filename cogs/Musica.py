@@ -455,9 +455,16 @@ class Musica(commands.Cog):
                     
                     # Armazena o player
                     self.players[interaction.guild_id] = player
-                
-                # Reseta o contador de tentativas de reconexão
-                self.reconnect_attempts[interaction.guild_id] = 0
+                    
+                    # Reseta o contador de tentativas de reconexão
+                    self.reconnect_attempts[interaction.guild_id] = 0
+                except Exception as e:
+                    logger.error(f"Erro ao criar player para guild {interaction.guild_id}: {e}")
+                    await interaction.followup.send(
+                        f"Erro ao conectar ao canal de voz: {e}",
+                        ephemeral=True
+                    )
+                    return None
                 
                 logger.info(f"Novo player criado e conectado para guild {interaction.guild_id} no canal {voice_channel.name}")
                 return player
