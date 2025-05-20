@@ -8,7 +8,7 @@ import mafic
 import logging
 import asyncio
 import re
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict
 
 logger = logging.getLogger("discord_bot.musica_mafic")
 
@@ -67,6 +67,10 @@ class PlayerControls(nextcord.ui.View):
         # Remove o player da lista do cog
         if interaction.guild_id in self.cog.players:
             del self.cog.players[interaction.guild_id]
+            
+        # Limpa o dicionário de requesters
+        if interaction.guild_id in self.cog.track_requesters:
+            del self.cog.track_requesters[interaction.guild_id]
 
         await interaction.response.send_message("⏹️ Player parado, fila limpa e bot desconectado.", ephemeral=True)
 
@@ -117,7 +121,39 @@ class Musica(commands.Cog):
         self.now_playing_messages = {}  # guild_id: (message_id, channel_id)
         self.reconnect_attempts = {}  # guild_id: número de tentativas
         self.max_reconnect_attempts = 3  # Máximo de tentativas de reconexão
+        
+        # Dicionário para armazenar os requesters das faixas
+        # Formato: {guild_id: {track_identifier: requester}}
+        self.track_requesters = {}
+        
         logger.info("--- [COG MUSICA MAFIC] Cog Musica (Mafic) inicializada ---")
+
+    def get_requester(self, guild_id, track):
+        """Obtém o requester de uma faixa."""
+        if guild_id not in self.track_requesters:
+            return None
+            
+        # Tenta obter pelo identificador da faixa
+        track_id = getattr(track, 'identifier', None) or getattr(track, 'id', None)
+        if not track_id:
+            return None
+            
+        return self.track_requesters[guild_id].get(track_id)
+        
+    def set_requester(self, guild_id, track, requester):
+        """Define o requester de uma faixa."""
+        # Inicializa o dicionário para o servidor se não existir
+        if guild_id not in self.track_requesters:
+            self.track_requesters[guild_id] = {}
+            
+        # Obtém o identificador da faixa
+        track_id = getattr(track, 'identifier', None) or getattr(track, 'id', None)
+        if not track_id:
+            logger.warning(f"Não foi possível obter identificador da faixa para definir requester: {track}")
+            return
+            
+        # Armazena o requester
+        self.track_requesters[guild_id][track_id] = requester
 
     async def get_player(self, interaction: Interaction) -> Optional[mafic.Player]:
         """Obtém ou cria um player para o servidor."""
@@ -193,6 +229,10 @@ class Musica(commands.Cog):
             # Armazena o player e reseta contador de tentativas
             self.players[interaction.guild_id] = player
             self.reconnect_attempts[interaction.guild_id] = 0
+            
+            # Inicializa o dicionário de requesters para este servidor
+            if interaction.guild_id not in self.track_requesters:
+                self.track_requesters[interaction.guild_id] = {}
             
             logger.info(f"Player criado e armazenado para guild {interaction.guild_id} no canal {interaction.user.voice.channel.name}")
             return player
@@ -288,10 +328,11 @@ class Musica(commands.Cog):
             added_to_queue_count = 0
             first_track_title = ""
 
-            # Adiciona o requester às faixas
+            # Adiciona o requester às faixas usando nosso sistema de armazenamento separado
             if isinstance(tracks, mafic.Playlist):
                 for track in tracks.tracks:
-                    track.requester = interaction.user
+                    # Armazena o requester para cada faixa
+                    self.set_requester(interaction.guild_id, track, interaction.user)
                 player.queue.extend(tracks.tracks)
                 added_to_queue_count = len(tracks.tracks)
                 first_track_title = tracks.name # Nome da playlist
@@ -299,14 +340,16 @@ class Musica(commands.Cog):
             elif isinstance(tracks, list) and tracks: # Lista de faixas (resultado de busca)
                 if is_search_term: # Se foi uma busca, geralmente pegamos a primeira e adicionamos
                     track_to_add = tracks[0]
-                    track_to_add.requester = interaction.user
+                    # Armazena o requester para a faixa
+                    self.set_requester(interaction.guild_id, track_to_add, interaction.user)
                     player.queue.append(track_to_add)
                     added_to_queue_count = 1
                     first_track_title = track_to_add.title
                     await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!")
                 else: # Se foi uma URL de faixa única que retornou uma lista (improvável, mas para cobrir)
                     for track in tracks:
-                        track.requester = interaction.user
+                        # Armazena o requester para cada faixa
+                        self.set_requester(interaction.guild_id, track, interaction.user)
                     player.queue.extend(tracks)
                     added_to_queue_count = len(tracks)
                     first_track_title = tracks[0].title
@@ -395,9 +438,16 @@ class Musica(commands.Cog):
         
         embed.add_field(name=f"Próximas na Fila ({len(player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
         
-        # Corrigido o problema de aspas na f-string
-        embed.set_footer(text=f"Adicionado por: {current_track.requester.display_name if current_track.requester else 'Desconhecido'}", 
-                         icon_url=current_track.requester.display_avatar.url if current_track.requester else self.bot.user.display_avatar.url)
+        # Obtém o requester da faixa atual
+        requester = self.get_requester(player.guild_id, current_track)
+        
+        # Define o footer com o requester
+        if requester:
+            embed.set_footer(text=f"Adicionado por: {requester.display_name}", 
+                            icon_url=requester.display_avatar.url)
+        else:
+            embed.set_footer(text=f"Adicionado por: Desconhecido", 
+                            icon_url=self.bot.user.display_avatar.url)
 
         try:
             await message.edit(content=None, embed=embed, view=PlayerControls(player, self))
@@ -433,10 +483,14 @@ class Musica(commands.Cog):
 
         # Informações da música atual
         if player.current:
+            # Obtém o requester da faixa atual
+            requester = self.get_requester(interaction.guild_id, player.current)
+            requester_mention = requester.mention if requester else "Desconhecido"
+            
             embed.add_field(
                 name="🎶 Tocando Agora",
                 value=f"**[{player.current.title}]({player.current.uri})** ({self.format_duration(player.current.length)})\n"
-                      f"Adicionado por: {player.current.requester.mention if player.current.requester else 'Desconhecido'}",
+                      f"Adicionado por: {requester_mention}",
                 inline=False
             )
         else:
@@ -450,8 +504,11 @@ class Musica(commands.Cog):
         if player.queue:
             queue_list = []
             for i, track in enumerate(player.queue[:10]):  # Limita a 10 músicas para não sobrecarregar o embed
-                requester = track.requester.mention if track.requester else "Desconhecido"
-                queue_list.append(f"**{i+1}.** [{track.title}]({track.uri}) ({self.format_duration(track.length)}) - {requester}")
+                # Obtém o requester da faixa
+                requester = self.get_requester(interaction.guild_id, track)
+                requester_mention = requester.mention if requester else "Desconhecido"
+                
+                queue_list.append(f"**{i+1}.** [{track.title}]({track.uri}) ({self.format_duration(track.length)}) - {requester_mention}")
             
             remaining = len(player.queue) - 10
             queue_text = "\n".join(queue_list)
@@ -563,6 +620,10 @@ class Musica(commands.Cog):
 
         # Remove o player da lista do cog
         del self.players[interaction.guild_id]
+        
+        # Limpa o dicionário de requesters
+        if interaction.guild_id in self.track_requesters:
+            del self.track_requesters[interaction.guild_id]
 
         await interaction.response.send_message("⏹️ Player parado, fila limpa e bot desconectado.")
 
@@ -711,9 +772,16 @@ class Musica(commands.Cog):
         
         embed.add_field(name=f"Próximas na Fila ({len(player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
         
-        # Corrigido o problema de aspas na f-string
-        embed.set_footer(text=f"Adicionado por: {track.requester.display_name if track.requester else 'Desconhecido'}", 
-                         icon_url=track.requester.display_avatar.url if track.requester else self.bot.user.display_avatar.url)
+        # Obtém o requester da faixa atual
+        requester = self.get_requester(player.guild.id, track)
+        
+        # Define o footer com o requester
+        if requester:
+            embed.set_footer(text=f"Adicionado por: {requester.display_name}", 
+                            icon_url=requester.display_avatar.url)
+        else:
+            embed.set_footer(text=f"Adicionado por: Desconhecido", 
+                            icon_url=self.bot.user.display_avatar.url)
 
         # Verifica se já existe uma mensagem de "agora tocando" para este servidor
         if player.guild.id in self.now_playing_messages:
@@ -738,9 +806,10 @@ class Musica(commands.Cog):
         text_channel = None
         
         # Tenta encontrar o canal onde o comando foi executado
-        if track.requester and isinstance(track.requester, nextcord.Member):
+        requester = self.get_requester(player.guild.id, track)
+        if requester and isinstance(requester, nextcord.Member):
             for channel in player.guild.text_channels:
-                if channel.permissions_for(player.guild.me).send_messages and channel.permissions_for(track.requester).read_messages:
+                if channel.permissions_for(player.guild.me).send_messages and channel.permissions_for(requester).read_messages:
                     text_channel = channel
                     break
         
@@ -843,6 +912,10 @@ class Musica(commands.Cog):
                     
                     # Remove o player da lista
                     del self.players[member.guild.id]
+                    
+                    # Limpa o dicionário de requesters
+                    if member.guild.id in self.track_requesters:
+                        del self.track_requesters[member.guild.id]
                     
                     # Atualiza a mensagem de "agora tocando"
                     if member.guild.id in self.now_playing_messages:
