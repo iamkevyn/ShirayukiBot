@@ -323,20 +323,20 @@ class MusicPanel(nextcord.ui.View):
         
     def add_controls(self):
         # Primeira linha: controles básicos
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["volume_down"], style=nextcord.ButtonStyle.danger, row=0, custom_id="volume_down"))
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["back"], style=nextcord.ButtonStyle.danger, row=0, custom_id="back"))
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["pause"], style=nextcord.ButtonStyle.danger, row=0, custom_id="pause"))
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["skip"], style=nextcord.ButtonStyle.danger, row=0, custom_id="skip"))
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["volume_up"], style=nextcord.ButtonStyle.danger, row=0, custom_id="volume_up"))
+        self.add_item(nextcord.ui.Button(label="Down", emoji="⬇️", style=nextcord.ButtonStyle.primary, row=0, custom_id="volume_down"))
+        self.add_item(nextcord.ui.Button(label="Back", emoji="⏮️", style=nextcord.ButtonStyle.primary, row=0, custom_id="back"))
+        self.add_item(nextcord.ui.Button(label="Pause", emoji="⏸️", style=nextcord.ButtonStyle.primary, row=0, custom_id="pause"))
+        self.add_item(nextcord.ui.Button(label="Skip", emoji="⏭️", style=nextcord.ButtonStyle.primary, row=0, custom_id="skip"))
+        self.add_item(nextcord.ui.Button(label="Up", emoji="🔊", style=nextcord.ButtonStyle.primary, row=0, custom_id="volume_up"))
         
         # Segunda linha: controles adicionais
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["shuffle"], style=nextcord.ButtonStyle.danger, row=1, custom_id="shuffle"))
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["loop"], style=nextcord.ButtonStyle.danger, row=1, custom_id="loop"))
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["stop"], style=nextcord.ButtonStyle.danger, row=1, custom_id="stop"))
+        self.add_item(nextcord.ui.Button(label="Shuffle", emoji="🔀", style=nextcord.ButtonStyle.primary, row=1, custom_id="shuffle"))
+        self.add_item(nextcord.ui.Button(label="Loop", emoji="🔁", style=nextcord.ButtonStyle.primary, row=1, custom_id="loop"))
+        self.add_item(nextcord.ui.Button(label="Stop", emoji="⏹️", style=nextcord.ButtonStyle.primary, row=1, custom_id="stop"))
         
         # Terceira linha: playlist e autoplay
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["autoplay"], style=nextcord.ButtonStyle.danger, row=2, custom_id="autoplay"))
-        self.add_item(nextcord.ui.Button(emoji=EMOJIS["playlist"], style=nextcord.ButtonStyle.danger, row=2, custom_id="playlist"))
+        self.add_item(nextcord.ui.Button(label="AutoPlay", emoji="♾️", style=nextcord.ButtonStyle.primary, row=2, custom_id="autoplay"))
+        self.add_item(nextcord.ui.Button(label="Playlist", emoji="📋", style=nextcord.ButtonStyle.primary, row=2, custom_id="playlist"))
 
 class Musica(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -601,7 +601,17 @@ class Musica(commands.Cog):
                 queue.extend(tracks.tracks)
                 added_to_queue_count = len(tracks.tracks)
                 first_track_title = tracks.name # Nome da playlist
-                await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!")
+                
+                # Envia mensagem de confirmação
+                confirm_msg = await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!")
+                
+                # Cria o painel estilizado imediatamente após adicionar à fila
+                if not player.current and queue:
+                    # Se não está tocando nada ainda, vamos criar o painel após iniciar a reprodução
+                    pass
+                else:
+                    # Se já está tocando algo, criamos o painel agora mesmo
+                    await self.create_now_playing_panel(interaction.channel, player)
             elif isinstance(tracks, list) and tracks: # Lista de faixas (resultado de busca)
                 if is_search_term: # Se foi uma busca, geralmente pegamos a primeira e adicionamos
                     track_to_add = tracks[0]
@@ -610,7 +620,17 @@ class Musica(commands.Cog):
                     queue.append(track_to_add)
                     added_to_queue_count = 1
                     first_track_title = track_to_add.title
-                    await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!")
+                    
+                    # Envia mensagem de confirmação
+                    confirm_msg = await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!")
+                    
+                    # Cria o painel estilizado imediatamente após adicionar à fila
+                    if not player.current and queue:
+                        # Se não está tocando nada ainda, vamos criar o painel após iniciar a reprodução
+                        pass
+                    else:
+                        # Se já está tocando algo, criamos o painel agora mesmo
+                        await self.create_now_playing_panel(interaction.channel, player)
                 else: # Se foi uma URL de faixa única que retornou uma lista (improvável, mas para cobrir)
                     for track in tracks:
                         # Armazena o requester para cada faixa
@@ -618,7 +638,17 @@ class Musica(commands.Cog):
                     queue.extend(tracks)
                     added_to_queue_count = len(tracks)
                     first_track_title = tracks[0].title
-                    await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!")
+                    
+                    # Envia mensagem de confirmação
+                    confirm_msg = await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!")
+                    
+                    # Cria o painel estilizado imediatamente após adicionar à fila
+                    if not player.current and queue:
+                        # Se não está tocando nada ainda, vamos criar o painel após iniciar a reprodução
+                        pass
+                    else:
+                        # Se já está tocando algo, criamos o painel agora mesmo
+                        await self.create_now_playing_panel(interaction.channel, player)
             else:
                 await interaction.followup.send(f"Não foi possível processar o resultado para: `{busca}`", ephemeral=True)
                 return
@@ -653,6 +683,67 @@ class Musica(commands.Cog):
             except:
                 pass
 
+    async def create_now_playing_panel(self, channel, player):
+        """Cria um novo painel estilizado para a música atual."""
+        if not player or not player.guild or not player.current:
+            return None
+            
+        guild_id = player.guild.id
+        current_track = player.current
+        
+        # Cria um embed estilizado para o painel de música
+        embed = nextcord.Embed(
+            title=f"{EMOJIS['music']} PAINEL DE MÚSICA",
+            description=f"**[{current_track.title}]({current_track.uri})**",
+            color=nextcord.Color.red()  # Cor vermelha para combinar com os botões
+        )
+        
+        # Obtém o requester da faixa atual
+        requester = self.get_requester(guild_id, current_track)
+        
+        # Adiciona campos para Requested By, Duration e Music Author
+        embed.add_field(
+            name="Adicionado por",
+            value=f"{requester.mention if requester else 'Desconhecido'}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Duração",
+            value=self.format_duration(current_track.length),
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Autor",
+            value=current_track.author,
+            inline=True
+        )
+        
+        # Define a thumbnail como a artwork da música, se disponível
+        if current_track.artwork_url:
+            embed.set_thumbnail(url=current_track.artwork_url)
+            
+        # Adiciona o footer com informações adicionais
+        loop_status = "Desativado"
+        loop_state = self.get_loop_state(guild_id)
+        if loop_state == "track": loop_status = "Faixa"
+        elif loop_state == "queue": loop_status = "Fila"
+        
+        embed.set_footer(text=f"Volume: {player.volume}% | Loop: {loop_status} | Status: {'Pausado' if player.paused else 'Tocando'}")
+
+        try:
+            # Envia a mensagem com o embed e os controles
+            message = await channel.send(embed=embed, view=PlayerControls(player, self))
+            
+            # Armazena a referência para atualização futura
+            self.now_playing_messages[guild_id] = (message.id, channel.id)
+            logger.info(f"Novo painel 'agora tocando' criado para guild {guild_id} no canal {channel.name}")
+            return message
+        except Exception as e:
+            logger.error(f"Erro ao criar painel 'agora tocando' para guild {guild_id}: {e}")
+            return None
+            
     async def update_now_playing_message(self, player: mafic.Player):
         """Atualiza a mensagem de 'agora tocando'."""
         if not player or not player.guild or not player.current:
