@@ -115,35 +115,64 @@ class Musica(commands.Cog):
         self.bot = bot
         self.players = {}  # guild_id: mafic.Player
         self.now_playing_messages = {}  # guild_id: (message_id, channel_id)
+        self.reconnect_attempts = {}  # guild_id: número de tentativas
+        self.max_reconnect_attempts = 3  # Máximo de tentativas de reconexão
         logger.info("--- [COG MUSICA MAFIC] Cog Musica (Mafic) inicializada ---")
 
     async def get_player(self, interaction: Interaction) -> Optional[mafic.Player]:
         """Obtém ou cria um player para o servidor."""
+        # Verifica se o usuário está em um canal de voz
+        if not interaction.guild or not interaction.user.voice or not interaction.user.voice.channel:
+            return None
+
+        # Verifica se o NodePool do Mafic está disponível
+        if not hasattr(self.bot, "mafic_pool") or not self.bot.mafic_pool:
+            logger.error("Mafic NodePool não encontrado no bot. O setup_hook do bot falhou?")
+            return None
+
+        # Verifica se já existe um player para este servidor
         if interaction.guild_id in self.players:
-            # Verifica se o player ainda está conectado, caso contrário, tenta reconectar ou limpar
             player = self.players[interaction.guild_id]
-            if not player.connected:
-                logger.warning(f"Player para guild {interaction.guild_id} encontrado mas não conectado. Tentando limpar.")
+            
+            # Verifica se o player ainda está conectado
+            if player.connected:
+                return player
+            else:
+                # Player existe mas não está conectado, vamos limpar e criar um novo
+                logger.warning(f"Player para guild {interaction.guild_id} encontrado mas não conectado. Limpando...")
                 try:
                     await player.destroy()
                 except Exception as e_destroy:
                     logger.error(f"Erro ao tentar destruir player desconectado para guild {interaction.guild_id}: {e_destroy}")
+                
+                # Remove o player da lista
                 del self.players[interaction.guild_id]
-            else:
-                return player
+                
+                # Reseta contagem de tentativas de reconexão
+                self.reconnect_attempts[interaction.guild_id] = 0
 
-        if not interaction.guild or not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("Você precisa estar em um canal de voz para usar os comandos de música.", ephemeral=True)
-            return None
-
-        if not hasattr(self.bot, "mafic_pool") or not self.bot.mafic_pool:
-            logger.error("Mafic NodePool não encontrado no bot. O setup_hook do bot falhou?")
-            await interaction.response.send_message("Erro crítico: O sistema de música não está inicializado corretamente (NodePool).", ephemeral=True)
+        # Incrementa contador de tentativas de reconexão
+        if interaction.guild_id not in self.reconnect_attempts:
+            self.reconnect_attempts[interaction.guild_id] = 0
+        
+        self.reconnect_attempts[interaction.guild_id] += 1
+        
+        # Verifica se excedeu o número máximo de tentativas
+        if self.reconnect_attempts[interaction.guild_id] > self.max_reconnect_attempts:
+            logger.warning(f"Máximo de tentativas de reconexão excedido para guild {interaction.guild_id}")
             return None
 
         try:
             # Conecta ao canal de voz e cria o player
             logger.info(f"Tentando conectar ao canal de voz: {interaction.user.voice.channel.name} (ID: {interaction.user.voice.channel.id}) para guild {interaction.guild_id}")
+            
+            # Tenta obter um nó disponível
+            node = self.bot.mafic_pool.get_node()
+            if not node:
+                logger.error("Nenhum nó Lavalink disponível")
+                return None
+            
+            # Conecta ao canal de voz
             player: mafic.Player = await interaction.user.voice.channel.connect(cls=mafic.Player)
             logger.info(f"Conectado ao canal de voz. Player: {player}")
 
@@ -157,15 +186,29 @@ class Musica(commands.Cog):
             else:
                 logger.warning(f"Não foi possível definir o bot como surdo: player, guild ou guild.me não disponíveis após conexão. Guild ID: {interaction.guild_id}")
             
+            # Armazena o player e reseta contador de tentativas
             self.players[interaction.guild_id] = player
+            self.reconnect_attempts[interaction.guild_id] = 0
+            
             logger.info(f"Player criado e armazenado para guild {interaction.guild_id} no canal {interaction.user.voice.channel.name}")
             return player
-        except mafic.NoNodesAvailable:
-            await interaction.response.send_message("Nenhum nó Lavalink disponível para conectar. Tente novamente mais tarde.", ephemeral=True)
+        except mafic.errors.NoNodesAvailable:
             logger.error("Falha ao conectar: Nenhum nó Lavalink disponível.")
             return None
+        except mafic.errors.HTTPNotFound as e:
+            logger.error(f"Erro HTTP 404 ao conectar ao canal de voz: {e}")
+            # Tenta reconectar ao Lavalink se for um erro de sessão
+            if "Session not found" in str(e):
+                logger.warning("Sessão não encontrada. Tentando reconectar ao Lavalink...")
+                try:
+                    # Tenta reconectar o nó
+                    for node in self.bot.mafic_pool.nodes:
+                        await node.reconnect()
+                    logger.info("Reconexão ao Lavalink concluída")
+                except Exception as reconnect_error:
+                    logger.error(f"Erro ao reconectar ao Lavalink: {reconnect_error}")
+            return None
         except Exception as e:
-            await interaction.response.send_message(f"Erro ao conectar ao canal de voz: {e}", ephemeral=True)
             logger.error(f"Erro ao conectar ao canal de voz para guild {interaction.guild_id}: {e}", exc_info=True)
             return None
 
@@ -180,15 +223,20 @@ class Musica(commands.Cog):
         )
     ):
         """Comando para tocar música."""
-        await interaction.response.defer(ephemeral=False) # Deferir para dar tempo de processar
+        # Primeiro, verificamos se o usuário está em um canal de voz
+        if not interaction.guild or not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("Você precisa estar em um canal de voz para usar os comandos de música.", ephemeral=True)
+            return
+
+        # Deferimos a resposta para dar tempo de processar
+        await interaction.response.defer(ephemeral=False)
 
         try:
+            # Obtemos ou criamos o player
             player = await self.get_player(interaction)
+            
             if not player:
-                # get_player já envia mensagem de erro, então não precisa enviar outra aqui
-                # Apenas verificamos se a interação já foi respondida para evitar erro.
-                if not interaction.response.is_done():
-                    await interaction.followup.send("Não foi possível obter o player de música.", ephemeral=True)
+                await interaction.followup.send("Não foi possível conectar ao canal de voz. Verifique se o bot tem permissão ou tente novamente mais tarde.", ephemeral=True)
                 return
 
             # Verifica se é uma URL válida ou um termo de busca
@@ -203,11 +251,29 @@ class Musica(commands.Cog):
                 if "soundcloud.com" in busca:
                     source_type = mafic.Source.SOUNDCLOUD
                 # Para URLs, incluindo playlists, fetch_tracks é geralmente o melhor
-                tracks = await player.fetch_tracks(busca, source_type=None) # Deixa Mafic decidir a fonte pela URL
+                try:
+                    tracks = await player.fetch_tracks(busca, source_type=None) # Deixa Mafic decidir a fonte pela URL
+                except mafic.errors.HTTPNotFound as e:
+                    logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
+                    await interaction.followup.send("Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
+                    return
+                except Exception as e:
+                    logger.error(f"Erro ao buscar faixas por URL: {e}")
+                    await interaction.followup.send(f"Erro ao buscar música: {e}", ephemeral=True)
+                    return
             elif is_search_term:
                 logger.info(f"Buscando por termo: {busca} para guild {interaction.guild_id}")
                 # Para termos de busca, usamos search_tracks e especificamos a fonte (ou deixamos padrão)
-                tracks = await player.search_tracks(query=busca, source=source_type) 
+                try:
+                    tracks = await player.search_tracks(query=busca, source=source_type)
+                except mafic.errors.HTTPNotFound as e:
+                    logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
+                    await interaction.followup.send("Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
+                    return
+                except Exception as e:
+                    logger.error(f"Erro ao buscar faixas por termo: {e}")
+                    await interaction.followup.send(f"Erro ao buscar música: {e}", ephemeral=True)
+                    return
             else:
                 await interaction.followup.send("Entrada inválida. Por favor, forneça uma URL válida (YouTube/SoundCloud) ou um termo de busca (3-500 caracteres).", ephemeral=True)
                 return
@@ -219,48 +285,66 @@ class Musica(commands.Cog):
             added_to_queue_count = 0
             first_track_title = ""
 
+            # Adiciona o requester às faixas
             if isinstance(tracks, mafic.Playlist):
+                for track in tracks.tracks:
+                    track.requester = interaction.user
                 player.queue.extend(tracks.tracks)
                 added_to_queue_count = len(tracks.tracks)
                 first_track_title = tracks.name # Nome da playlist
-                await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!", ephemeral=False)
+                await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!")
             elif isinstance(tracks, list) and tracks: # Lista de faixas (resultado de busca)
                 if is_search_term: # Se foi uma busca, geralmente pegamos a primeira e adicionamos
                     track_to_add = tracks[0]
+                    track_to_add.requester = interaction.user
                     player.queue.append(track_to_add)
                     added_to_queue_count = 1
                     first_track_title = track_to_add.title
-                    await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!", ephemeral=False)
+                    await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!")
                 else: # Se foi uma URL de faixa única que retornou uma lista (improvável, mas para cobrir)
+                    for track in tracks:
+                        track.requester = interaction.user
                     player.queue.extend(tracks)
                     added_to_queue_count = len(tracks)
                     first_track_title = tracks[0].title
-                    await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!", ephemeral=False)
+                    await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!")
             else:
                 await interaction.followup.send(f"Não foi possível processar o resultado para: `{busca}`", ephemeral=True)
                 return
 
             if not player.current and player.queue:
-                await player.play(player.queue.pop(0), start_time=0) # Inicia a primeira música da fila
-                # A mensagem de "agora tocando" será tratada por on_track_start
+                # Inicia a primeira música da fila
+                try:
+                    first_track = player.queue.pop(0)
+                    await player.play(first_track, start_time=0)
+                    logger.info(f"Iniciando reprodução de {first_track.title} para guild {interaction.guild_id}")
+                except mafic.errors.HTTPNotFound as e:
+                    logger.error(f"Erro HTTP 404 ao iniciar reprodução: {e}")
+                    await interaction.followup.send("Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
+                    return
+                except Exception as e:
+                    logger.error(f"Erro ao iniciar reprodução: {e}")
+                    await interaction.followup.send(f"Erro ao iniciar reprodução: {e}", ephemeral=True)
+                    return
             elif player.current and added_to_queue_count > 0:
                 # Se já está tocando e algo foi adicionado, a mensagem de "agora tocando" pode ser atualizada
                 # para refletir a fila, se a view estiver ativa.
                 await self.update_now_playing_message(player)
-        except mafic.errors.HTTPNotFound as e:
-            logger.error(f"Erro HTTP 404 do Lavalink: {e}")
-            await interaction.followup.send("Erro de conexão com o servidor de música. Tente novamente mais tarde.", ephemeral=True)
         except nextcord.errors.InteractionResponded:
             logger.warning("Interação já respondida durante o comando /tocar")
         except Exception as e:
             logger.error(f"Erro inesperado no comando /tocar: {e}", exc_info=True)
             try:
-                await interaction.followup.send(f"Ocorreu um erro inesperado: {e}", ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"Ocorreu um erro inesperado: {e}", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"Ocorreu um erro inesperado: {e}", ephemeral=True)
             except:
                 pass
 
     async def update_now_playing_message(self, player: mafic.Player):
-        if not player.guild_id or not player.current:
+        """Atualiza a mensagem de 'agora tocando'."""
+        if not player or not player.guild_id or not player.current:
             return
 
         message_info = self.now_playing_messages.get(player.guild_id)
@@ -277,7 +361,7 @@ class Musica(commands.Cog):
             message = await channel.fetch_message(msg_id)
         except nextcord.NotFound:
             logger.warning(f"Mensagem 'agora tocando' (ID: {msg_id}) não encontrada para guild {player.guild_id} ao atualizar.")
-            # Se a mensagem não existe mais, talvez criar uma nova? Ou apenas limpar.
+            # Se a mensagem não existe mais, limpa a referência
             del self.now_playing_messages[player.guild_id]
             return
         except Exception as e:
@@ -570,8 +654,29 @@ class Musica(commands.Cog):
         await interaction.response.send_message("🔀 Fila embaralhada!")
         await self.update_now_playing_message(player)
 
+    @nextcord.slash_command(name="reconectar", description="Força a reconexão do bot ao servidor de música.")
+    async def reconnect(self, interaction: Interaction):
+        """Comando para forçar a reconexão do bot ao servidor de música."""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Tenta reconectar todos os nós do Lavalink
+            if hasattr(self.bot, "mafic_pool") and self.bot.mafic_pool:
+                for node in self.bot.mafic_pool.nodes:
+                    await node.reconnect()
+                
+                # Reseta contadores de tentativas
+                self.reconnect_attempts = {}
+                
+                await interaction.followup.send("✅ Reconexão ao servidor de música concluída com sucesso!", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Sistema de música não inicializado corretamente.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Erro ao reconectar ao Lavalink: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Erro ao reconectar ao servidor de música: {e}", ephemeral=True)
+
     # Eventos Mafic
-    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
+    @commands.Cog.listener()
     async def on_mafic_track_start(self, player: mafic.Player, track: mafic.Track):
         """Evento disparado quando uma faixa começa a tocar."""
         if not player.guild:
@@ -658,7 +763,7 @@ class Musica(commands.Cog):
             except Exception as e:
                 logger.error(f"Erro ao criar mensagem 'agora tocando' para guild {player.guild.id}: {e}")
 
-    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
+    @commands.Cog.listener()
     async def on_mafic_track_end(self, player: mafic.Player, track: mafic.Track, reason: str):
         """Evento disparado quando uma faixa termina de tocar."""
         logger.info(f"Faixa terminada: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Razão: {reason}")
@@ -674,7 +779,7 @@ class Musica(commands.Cog):
             except Exception as e:
                 logger.error(f"Erro ao atualizar mensagem 'agora tocando' após fim da fila para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
 
-    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
+    @commands.Cog.listener()
     async def on_mafic_track_exception(self, player: mafic.Player, track: mafic.Track, exception: Exception):
         """Evento disparado quando ocorre um erro ao tocar uma faixa."""
         logger.error(f"Erro ao tocar faixa: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Erro: {exception}")
@@ -689,7 +794,7 @@ class Musica(commands.Cog):
             except Exception as e:
                 logger.error(f"Erro ao enviar notificação de erro para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
 
-    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
+    @commands.Cog.listener()
     async def on_mafic_track_stuck(self, player: mafic.Player, track: mafic.Track, threshold_ms: int):
         """Evento disparado quando uma faixa fica presa (não avança)."""
         logger.warning(f"Faixa presa: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Threshold: {threshold_ms}ms")
@@ -710,7 +815,7 @@ class Musica(commands.Cog):
         except Exception as e:
             logger.error(f"Erro ao tentar pular faixa presa: {e}")
 
-    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
+    @commands.Cog.listener()
     async def on_voice_state_update(self, member: nextcord.Member, before: nextcord.VoiceState, after: nextcord.VoiceState):
         """Evento disparado quando o estado de voz de um membro muda."""
         # Ignora se não for o bot
@@ -750,8 +855,28 @@ class Musica(commands.Cog):
                 except Exception as e:
                     logger.error(f"Erro ao limpar player após desconexão para guild {member.guild.id}: {e}")
 
+    @commands.Cog.listener()
+    async def on_mafic_node_ready(self, node: mafic.Node):
+        """Evento disparado quando um nó Lavalink fica pronto."""
+        logger.info(f"Nó Lavalink {node.label} está pronto!")
+        
+        # Reseta contadores de tentativas de reconexão
+        self.reconnect_attempts = {}
+
+    @commands.Cog.listener()
+    async def on_mafic_node_unavailable(self, node: mafic.Node):
+        """Evento disparado quando um nó Lavalink fica indisponível."""
+        logger.warning(f"Nó Lavalink {node.label} ficou indisponível!")
+        
+        # Tenta reconectar o nó
+        try:
+            await node.reconnect()
+            logger.info(f"Tentativa de reconexão ao nó {node.label} iniciada")
+        except Exception as e:
+            logger.error(f"Erro ao tentar reconectar ao nó {node.label}: {e}")
+
     # Tratamento de erros para comandos de aplicação
-    @commands.Cog.listener()  # Corrigido: usando commands.Cog.listener() em vez de nextcord.Cog.listener()
+    @commands.Cog.listener()
     async def on_application_command_error(self, interaction: Interaction, error):
         # Verifica se o erro é de um comando desta cog
         if hasattr(interaction, 'application_command'):
@@ -764,7 +889,7 @@ class Musica(commands.Cog):
                     )
                 elif isinstance(error, mafic.errors.HTTPNotFound):
                     await interaction.response.send_message(
-                        f"⚠️ Erro de conexão com o servidor de música. Tente novamente mais tarde.",
+                        f"⚠️ Erro de conexão com o servidor de música. Tente usar o comando `/reconectar` e depois tente novamente.",
                         ephemeral=True
                     )
                     logger.error(f"Erro HTTP 404 do Lavalink: {error}")
