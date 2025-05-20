@@ -446,17 +446,15 @@ class Musica(commands.Cog):
                     )
                     return None
                     
-                # Cria o player
-                player = await self.bot.mafic_pool.create_player(interaction.guild_id)
-                
-                # Conecta ao canal de voz
-                await player.connect(voice_channel.id)
-                
-                # Define o volume padrão
-                await player.set_volume(70)
-                
-                # Armazena o player
-                self.players[interaction.guild_id] = player
+                # Cria o player usando o método correto de conexão
+                try:
+                    player = await voice_channel.connect(cls=mafic.Player)
+                    
+                    # Define o volume padrão
+                    await player.set_volume(70)
+                    
+                    # Armazena o player
+                    self.players[interaction.guild_id] = player
                 
                 # Reseta o contador de tentativas de reconexão
                 self.reconnect_attempts[interaction.guild_id] = 0
