@@ -355,17 +355,51 @@ class Musica(commands.Cog):
 
             if is_url:
                 logger.info(f"Buscando por URL: {busca} para guild {interaction.guild_id}")
-                # Para URLs, incluindo playlists, fetch_tracks é geralmente o melhor
-                try:
-                    tracks = await player.fetch_tracks(busca)  # Deixa Mafic decidir a fonte pela URL
-                except mafic.errors.HTTPNotFound as e:
-                    logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
-                    await interaction.followup.send("Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
-                    return
-                except Exception as e:
-                    logger.error(f"Erro ao buscar faixas por URL: {e}")
-                    await interaction.followup.send(f"Erro ao buscar música: {e}", ephemeral=True)
-                    return
+                
+                # Verifica se é um link do Spotify
+                if "spotify.com" in busca:
+                    # Extrai o nome da música do URL do Spotify (se possível)
+                    spotify_track_name = None
+                    try:
+                        # Tenta extrair o nome da música da URL ou do título da página
+                        # Isso é uma solução básica, já que não temos acesso à API do Spotify
+                        await interaction.followup.send(f"⚠️ Links diretos do Spotify não são suportados nativamente. Tentando buscar no YouTube...", ephemeral=True)
+                        
+                        # Extrai o ID da faixa do Spotify da URL
+                        import re
+                        spotify_id_match = re.search(r'track/([a-zA-Z0-9]+)', busca)
+                        if spotify_id_match:
+                            spotify_id = spotify_id_match.group(1)
+                            # Usa o ID como parte da busca
+                            spotify_track_name = f"spotify track {spotify_id}"
+                        else:
+                            # Fallback: usa a URL completa
+                            spotify_track_name = busca
+                            
+                        # Busca no YouTube usando o termo extraído
+                        search_query = f"ytsearch:{spotify_track_name}"
+                        tracks = await player.fetch_tracks(search_query)
+                        
+                        if not tracks:
+                            await interaction.followup.send(f"❌ Não foi possível encontrar a música do Spotify no YouTube. Tente buscar diretamente pelo nome da música.", ephemeral=True)
+                            return
+                            
+                    except Exception as e:
+                        logger.error(f"Erro ao processar link do Spotify: {e}")
+                        await interaction.followup.send(f"❌ Erro ao processar link do Spotify: {e}\n\nTente buscar diretamente pelo nome da música.", ephemeral=True)
+                        return
+                else:
+                    # Para outras URLs (não Spotify), incluindo playlists, fetch_tracks é geralmente o melhor
+                    try:
+                        tracks = await player.fetch_tracks(busca)  # Deixa Mafic decidir a fonte pela URL
+                    except mafic.errors.HTTPNotFound as e:
+                        logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
+                        await interaction.followup.send("❌ Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
+                        return
+                    except Exception as e:
+                        logger.error(f"Erro ao buscar faixas por URL: {e}")
+                        await interaction.followup.send(f"❌ Erro ao buscar música: {e}\n\nSe você está tentando usar um serviço não suportado (como Spotify, Deezer, etc), tente buscar a música diretamente pelo nome ou use um link do YouTube/SoundCloud.", ephemeral=True)
+                        return
             elif is_search_term:
                 logger.info(f"Buscando por termo: {busca} para guild {interaction.guild_id}")
                 # Para termos de busca, tentamos várias abordagens
@@ -389,7 +423,7 @@ class Musica(commands.Cog):
                     # Se todas as tentativas falharam, informa ao usuário
                     if not tracks:
                         await interaction.followup.send(
-                            "Não foi possível encontrar resultados para sua busca. Tente usar um link direto do YouTube ou SoundCloud.", 
+                            "❌ Não foi possível encontrar resultados para sua busca. Tente usar termos mais específicos ou um link direto do YouTube ou SoundCloud.", 
                             ephemeral=True
                         )
                         return
@@ -397,13 +431,23 @@ class Musica(commands.Cog):
                 except mafic.errors.HTTPNotFound as e:
                     logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
                     await interaction.followup.send(
-                        "O servidor de música não conseguiu processar sua busca. Tente usar um link direto do YouTube ou SoundCloud.", 
+                        "❌ O servidor de música não conseguiu processar sua busca. Tente usar termos mais simples ou um link direto do YouTube ou SoundCloud.", 
                         ephemeral=True
                     )
                     return
                 except Exception as e:
                     logger.error(f"Erro ao buscar faixas por termo: {e}")
-                    await interaction.followup.send(f"Erro ao buscar música: {e}", ephemeral=True)
+                    # Verifica se é um erro de formato desconhecido
+                    if "Unknown file format" in str(e):
+                        await interaction.followup.send(
+                            "❌ Formato de arquivo desconhecido. O termo de busca pode conter caracteres especiais ou palavras que confundem o sistema de busca.\n\nTente usar termos mais simples ou específicos, como o nome da música e do artista.", 
+                            ephemeral=True
+                        )
+                    else:
+                        await interaction.followup.send(
+                            f"❌ Erro ao buscar música: {e}\n\nTente usar termos mais simples ou um link direto do YouTube ou SoundCloud.", 
+                            ephemeral=True
+                        )
                     return
             else:
                 await interaction.followup.send("Entrada inválida. Por favor, forneça uma URL válida (YouTube/SoundCloud) ou um termo de busca (3-500 caracteres).", ephemeral=True)
