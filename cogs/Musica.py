@@ -9,6 +9,7 @@ import logging
 import asyncio
 import re
 from typing import Optional, List, Union, Dict
+from collections import deque
 
 logger = logging.getLogger("discord_bot.musica_mafic")
 
@@ -21,8 +22,52 @@ URL_REGEX = re.compile(
 )
 SEARCH_TERM_REGEX = re.compile(r"^.{3,500}$") # Termos de busca genéricos
 
+class CustomQueue:
+    """Implementação personalizada de fila para substituir player.queue."""
+    def __init__(self):
+        self.items = deque()
+    
+    def append(self, item):
+        """Adiciona um item ao final da fila."""
+        self.items.append(item)
+    
+    def extend(self, items):
+        """Adiciona vários itens ao final da fila."""
+        self.items.extend(items)
+    
+    def pop(self, index=0):
+        """Remove e retorna um item da fila."""
+        if not self.items:
+            return None
+        return self.items.popleft() if index == 0 else self.items.pop(index)
+    
+    def clear(self):
+        """Limpa a fila."""
+        self.items.clear()
+    
+    def shuffle(self):
+        """Embaralha a fila."""
+        items_list = list(self.items)
+        import random
+        random.shuffle(items_list)
+        self.items = deque(items_list)
+    
+    def __len__(self):
+        """Retorna o tamanho da fila."""
+        return len(self.items)
+    
+    def __getitem__(self, index):
+        """Permite acessar itens por índice ou slice."""
+        if isinstance(index, slice):
+            return list(self.items)[index]
+        return list(self.items)[index]
+    
+    def __iter__(self):
+        """Permite iterar sobre a fila."""
+        return iter(self.items)
+
 class PlayerControls(nextcord.ui.View):
-    def __init__(self, player: mafic.Player, cog_instance):
+    def __init__(self, player, cog_instance):
         super().__init__(timeout=None) # Controles persistentes
         self.player = player
         self.cog = cog_instance
@@ -56,7 +101,11 @@ class PlayerControls(nextcord.ui.View):
             await interaction.response.send_message("O player não está ativo.", ephemeral=True)
             return
 
-        self.player.queue.clear()
+        # Limpa a fila personalizada
+        guild_id = interaction.guild_id
+        if guild_id in self.cog.queues:
+            self.cog.queues[guild_id].clear()
+            
         await self.player.stop() # Para a música atual
         
         try:
@@ -71,6 +120,14 @@ class PlayerControls(nextcord.ui.View):
         # Limpa o dicionário de requesters
         if interaction.guild_id in self.cog.track_requesters:
             del self.cog.track_requesters[interaction.guild_id]
+            
+        # Limpa a fila personalizada
+        if interaction.guild_id in self.cog.queues:
+            del self.cog.queues[interaction.guild_id]
+            
+        # Limpa o estado de loop
+        if interaction.guild_id in self.cog.loop_states:
+            del self.cog.loop_states[interaction.guild_id]
 
         await interaction.response.send_message("⏹️ Player parado, fila limpa e bot desconectado.", ephemeral=True)
 
@@ -93,24 +150,29 @@ class PlayerControls(nextcord.ui.View):
             await interaction.response.send_message("O player não está ativo.", ephemeral=True)
             return
 
-        current_loop_mode = self.player.loop
-        if current_loop_mode == mafic.LoopType.NONE:
-            self.player.loop = mafic.LoopType.TRACK
+        guild_id = interaction.guild_id
+        current_loop_mode = self.cog.get_loop_state(guild_id)
+        
+        if current_loop_mode == "none":
+            self.cog.set_loop_state(guild_id, "track")
             await interaction.response.send_message("🔁 Loop da faixa atual ativado!", ephemeral=True)
-        elif current_loop_mode == mafic.LoopType.TRACK:
-            self.player.loop = mafic.LoopType.QUEUE
+        elif current_loop_mode == "track":
+            self.cog.set_loop_state(guild_id, "queue")
             await interaction.response.send_message("🔁 Loop da fila ativado!", ephemeral=True)
-        elif current_loop_mode == mafic.LoopType.QUEUE:
-            self.player.loop = mafic.LoopType.NONE
+        elif current_loop_mode == "queue":
+            self.cog.set_loop_state(guild_id, "none")
             await interaction.response.send_message("🔁 Loop desativado!", ephemeral=True)
+            
         await self.cog.update_now_playing_message(self.player)
 
     @nextcord.ui.button(label="🔀 Shuffle", style=nextcord.ButtonStyle.secondary, row=1)
     async def shuffle_queue(self, button: nextcord.ui.Button, interaction: Interaction):
-        if not self.player or not self.player.queue:
+        guild_id = interaction.guild_id
+        if guild_id not in self.cog.queues or not self.cog.queues[guild_id]:
             await interaction.response.send_message("A fila está vazia para embaralhar.", ephemeral=True)
             return
-        self.player.queue.shuffle()
+            
+        self.cog.queues[guild_id].shuffle()
         await interaction.response.send_message("🔀 Fila embaralhada!", ephemeral=True)
         await self.cog.update_now_playing_message(self.player) # Para atualizar a exibição da fila se estiver visível
 
@@ -125,6 +187,14 @@ class Musica(commands.Cog):
         # Dicionário para armazenar os requesters das faixas
         # Formato: {guild_id: {track_identifier: requester}}
         self.track_requesters = {}
+        
+        # Dicionário para armazenar as filas personalizadas
+        # Formato: {guild_id: CustomQueue}
+        self.queues = {}
+        
+        # Dicionário para armazenar os estados de loop
+        # Formato: {guild_id: "none"|"track"|"queue"}
+        self.loop_states = {}
         
         logger.info("--- [COG MUSICA MAFIC] Cog Musica (Mafic) inicializada ---")
 
@@ -154,6 +224,20 @@ class Musica(commands.Cog):
             
         # Armazena o requester
         self.track_requesters[guild_id][track_id] = requester
+        
+    def get_queue(self, guild_id):
+        """Obtém a fila personalizada para um servidor."""
+        if guild_id not in self.queues:
+            self.queues[guild_id] = CustomQueue()
+        return self.queues[guild_id]
+        
+    def get_loop_state(self, guild_id):
+        """Obtém o estado de loop para um servidor."""
+        return self.loop_states.get(guild_id, "none")
+        
+    def set_loop_state(self, guild_id, state):
+        """Define o estado de loop para um servidor."""
+        self.loop_states[guild_id] = state
 
     async def get_player(self, interaction: Interaction) -> Optional[mafic.Player]:
         """Obtém ou cria um player para o servidor."""
@@ -233,6 +317,14 @@ class Musica(commands.Cog):
             # Inicializa o dicionário de requesters para este servidor
             if interaction.guild_id not in self.track_requesters:
                 self.track_requesters[interaction.guild_id] = {}
+                
+            # Inicializa a fila personalizada para este servidor
+            if interaction.guild_id not in self.queues:
+                self.queues[interaction.guild_id] = CustomQueue()
+                
+            # Inicializa o estado de loop para este servidor
+            if interaction.guild_id not in self.loop_states:
+                self.loop_states[interaction.guild_id] = "none"
             
             logger.info(f"Player criado e armazenado para guild {interaction.guild_id} no canal {interaction.user.voice.channel.name}")
             return player
@@ -327,13 +419,16 @@ class Musica(commands.Cog):
 
             added_to_queue_count = 0
             first_track_title = ""
+            
+            # Obtém a fila personalizada para este servidor
+            queue = self.get_queue(interaction.guild_id)
 
             # Adiciona o requester às faixas usando nosso sistema de armazenamento separado
             if isinstance(tracks, mafic.Playlist):
                 for track in tracks.tracks:
                     # Armazena o requester para cada faixa
                     self.set_requester(interaction.guild_id, track, interaction.user)
-                player.queue.extend(tracks.tracks)
+                queue.extend(tracks.tracks)
                 added_to_queue_count = len(tracks.tracks)
                 first_track_title = tracks.name # Nome da playlist
                 await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!")
@@ -342,7 +437,7 @@ class Musica(commands.Cog):
                     track_to_add = tracks[0]
                     # Armazena o requester para a faixa
                     self.set_requester(interaction.guild_id, track_to_add, interaction.user)
-                    player.queue.append(track_to_add)
+                    queue.append(track_to_add)
                     added_to_queue_count = 1
                     first_track_title = track_to_add.title
                     await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!")
@@ -350,7 +445,7 @@ class Musica(commands.Cog):
                     for track in tracks:
                         # Armazena o requester para cada faixa
                         self.set_requester(interaction.guild_id, track, interaction.user)
-                    player.queue.extend(tracks)
+                    queue.extend(tracks)
                     added_to_queue_count = len(tracks)
                     first_track_title = tracks[0].title
                     await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!")
@@ -358,10 +453,10 @@ class Musica(commands.Cog):
                 await interaction.followup.send(f"Não foi possível processar o resultado para: `{busca}`", ephemeral=True)
                 return
 
-            if not player.current and player.queue:
+            if not player.current and queue:
                 # Inicia a primeira música da fila
                 try:
-                    first_track = player.queue.pop(0)
+                    first_track = queue.pop(0)
                     await player.play(first_track, start_time=0)
                     logger.info(f"Iniciando reprodução de {first_track.title} para guild {interaction.guild_id}")
                 except mafic.errors.HTTPNotFound as e:
@@ -423,20 +518,25 @@ class Musica(commands.Cog):
         embed.add_field(name="Duração", value=self.format_duration(current_track.length), inline=True)
         embed.add_field(name="Autor", value=current_track.author, inline=True)
         
+        # Obtém o estado de loop para este servidor
         loop_status = "Desativado"
-        if player.loop == mafic.LoopType.TRACK: loop_status = "Faixa Atual"
-        elif player.loop == mafic.LoopType.QUEUE: loop_status = "Fila Inteira"
+        loop_state = self.get_loop_state(player.guild_id)
+        if loop_state == "track": loop_status = "Faixa Atual"
+        elif loop_state == "queue": loop_status = "Fila Inteira"
         embed.add_field(name="Loop", value=loop_status, inline=True)
 
         if current_track.artwork_url:
             embed.set_thumbnail(url=current_track.artwork_url)
         
+        # Obtém a fila personalizada para este servidor
+        queue = self.get_queue(player.guild_id)
+        
         queue_display = []
-        if player.queue:
-            for i, item in enumerate(player.queue[:5]): # Mostra as próximas 5
+        if queue:
+            for i, item in enumerate(queue[:5]): # Mostra as próximas 5
                 queue_display.append(f"{i+1}. {item.title} ({self.format_duration(item.length)})")
         
-        embed.add_field(name=f"Próximas na Fila ({len(player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
+        embed.add_field(name=f"Próximas na Fila ({len(queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
         
         # Obtém o requester da faixa atual
         requester = self.get_requester(player.guild_id, current_track)
@@ -475,6 +575,9 @@ class Musica(commands.Cog):
         if not player.connected:
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
+            
+        # Obtém a fila personalizada para este servidor
+        queue = self.get_queue(interaction.guild_id)
 
         embed = nextcord.Embed(
             title="🎵 Fila de Músicas",
@@ -501,22 +604,22 @@ class Musica(commands.Cog):
             )
 
         # Lista de músicas na fila
-        if player.queue:
+        if queue:
             queue_list = []
-            for i, track in enumerate(player.queue[:10]):  # Limita a 10 músicas para não sobrecarregar o embed
+            for i, track in enumerate(queue[:10]):  # Limita a 10 músicas para não sobrecarregar o embed
                 # Obtém o requester da faixa
                 requester = self.get_requester(interaction.guild_id, track)
                 requester_mention = requester.mention if requester else "Desconhecido"
                 
                 queue_list.append(f"**{i+1}.** [{track.title}]({track.uri}) ({self.format_duration(track.length)}) - {requester_mention}")
             
-            remaining = len(player.queue) - 10
+            remaining = len(queue) - 10
             queue_text = "\n".join(queue_list)
             if remaining > 0:
                 queue_text += f"\n\n*E mais {remaining} música(s)...*"
             
             embed.add_field(
-                name=f"📋 Próximas na Fila ({len(player.queue)})",
+                name=f"📋 Próximas na Fila ({len(queue)})",
                 value=queue_text,
                 inline=False
             )
@@ -529,8 +632,9 @@ class Musica(commands.Cog):
 
         # Informações adicionais
         loop_status = "Desativado"
-        if player.loop == mafic.LoopType.TRACK: loop_status = "Faixa Atual"
-        elif player.loop == mafic.LoopType.QUEUE: loop_status = "Fila Inteira"
+        loop_state = self.get_loop_state(interaction.guild_id)
+        if loop_state == "track": loop_status = "Faixa Atual"
+        elif loop_state == "queue": loop_status = "Fila Inteira"
         
         embed.add_field(name="🔁 Loop", value=loop_status, inline=True)
         embed.add_field(name="🔊 Volume", value=f"{player.volume}%", inline=True)
@@ -610,7 +714,10 @@ class Musica(commands.Cog):
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
 
-        player.queue.clear()
+        # Limpa a fila personalizada
+        if interaction.guild_id in self.queues:
+            self.queues[interaction.guild_id].clear()
+            
         await player.stop()  # Para a música atual
         
         try:
@@ -624,6 +731,14 @@ class Musica(commands.Cog):
         # Limpa o dicionário de requesters
         if interaction.guild_id in self.track_requesters:
             del self.track_requesters[interaction.guild_id]
+            
+        # Limpa a fila personalizada
+        if interaction.guild_id in self.queues:
+            del self.queues[interaction.guild_id]
+            
+        # Limpa o estado de loop
+        if interaction.guild_id in self.loop_states:
+            del self.loop_states[interaction.guild_id]
 
         await interaction.response.send_message("⏹️ Player parado, fila limpa e bot desconectado.")
 
@@ -686,14 +801,14 @@ class Musica(commands.Cog):
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
 
+        # Define o estado de loop para este servidor
+        self.set_loop_state(interaction.guild_id, modo)
+        
         if modo == "none":
-            player.loop = mafic.LoopType.NONE
             await interaction.response.send_message("🔁 Loop desativado.")
         elif modo == "track":
-            player.loop = mafic.LoopType.TRACK
             await interaction.response.send_message("🔁 Loop da faixa atual ativado.")
         elif modo == "queue":
-            player.loop = mafic.LoopType.QUEUE
             await interaction.response.send_message("🔁 Loop da fila inteira ativado.")
 
         await self.update_now_playing_message(player)
@@ -709,12 +824,15 @@ class Musica(commands.Cog):
         if not player.connected:
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
-
-        if not player.queue:
+            
+        # Obtém a fila personalizada para este servidor
+        queue = self.get_queue(interaction.guild_id)
+        
+        if not queue:
             await interaction.response.send_message("A fila está vazia para embaralhar.", ephemeral=True)
             return
 
-        player.queue.shuffle()
+        queue.shuffle()
         await interaction.response.send_message("🔀 Fila embaralhada!")
         await self.update_now_playing_message(player)
 
@@ -757,20 +875,25 @@ class Musica(commands.Cog):
         embed.add_field(name="Duração", value=self.format_duration(track.length), inline=True)
         embed.add_field(name="Autor", value=track.author, inline=True)
         
+        # Obtém o estado de loop para este servidor
         loop_status = "Desativado"
-        if player.loop == mafic.LoopType.TRACK: loop_status = "Faixa Atual"
-        elif player.loop == mafic.LoopType.QUEUE: loop_status = "Fila Inteira"
+        loop_state = self.get_loop_state(player.guild.id)
+        if loop_state == "track": loop_status = "Faixa Atual"
+        elif loop_state == "queue": loop_status = "Fila Inteira"
         embed.add_field(name="Loop", value=loop_status, inline=True)
 
         if track.artwork_url:
             embed.set_thumbnail(url=track.artwork_url)
         
+        # Obtém a fila personalizada para este servidor
+        queue = self.get_queue(player.guild.id)
+        
         queue_display = []
-        if player.queue:
-            for i, item in enumerate(player.queue[:5]):  # Mostra as próximas 5
+        if queue:
+            for i, item in enumerate(queue[:5]):  # Mostra as próximas 5
                 queue_display.append(f"{i+1}. {item.title} ({self.format_duration(item.length)})")
         
-        embed.add_field(name=f"Próximas na Fila ({len(player.queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
+        embed.add_field(name=f"Próximas na Fila ({len(queue)})", value="\n".join(queue_display) if queue_display else "Fila vazia", inline=False)
         
         # Obtém o requester da faixa atual
         requester = self.get_requester(player.guild.id, track)
@@ -840,16 +963,51 @@ class Musica(commands.Cog):
         """Evento disparado quando uma faixa termina de tocar."""
         logger.info(f"Faixa terminada: {track.title} em {player.guild.name if player.guild else 'Unknown'} ({player.guild.id if player.guild else 'Unknown'}). Razão: {reason}")
         
-        # Se a fila estiver vazia e não houver mais nada tocando, podemos limpar a mensagem de "agora tocando"
-        if not player.queue and not player.current and player.guild and player.guild.id in self.now_playing_messages:
+        # Verifica se o player e o guild existem
+        if not player or not player.guild:
+            return
+            
+        guild_id = player.guild.id
+        
+        # Obtém o estado de loop para este servidor
+        loop_state = self.get_loop_state(guild_id)
+        
+        # Obtém a fila personalizada para este servidor
+        queue = self.get_queue(guild_id)
+        
+        # Implementa o comportamento de loop
+        if loop_state == "track" and reason != "REPLACED":
+            # Loop de faixa: adiciona a faixa atual de volta à fila e a toca novamente
             try:
-                msg_id, channel_id = self.now_playing_messages[player.guild.id]
-                channel = self.bot.get_channel(channel_id)
-                if channel:
-                    message = await channel.fetch_message(msg_id)
-                    await message.edit(content="Fila vazia. Use `/tocar` para adicionar mais músicas!", embed=None, view=None)
+                await player.play(track, start_time=0)
+                logger.info(f"Loop de faixa: Reproduzindo novamente {track.title} para guild {guild_id}")
+                return
             except Exception as e:
-                logger.error(f"Erro ao atualizar mensagem 'agora tocando' após fim da fila para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
+                logger.error(f"Erro ao implementar loop de faixa: {e}")
+        elif loop_state == "queue" and reason != "REPLACED":
+            # Loop de fila: adiciona a faixa atual ao final da fila
+            queue.append(track)
+            logger.info(f"Loop de fila: Adicionando {track.title} ao final da fila para guild {guild_id}")
+        
+        # Se a fila não estiver vazia, toca a próxima música
+        if queue:
+            try:
+                next_track = queue.pop(0)
+                await player.play(next_track, start_time=0)
+                logger.info(f"Reproduzindo próxima faixa: {next_track.title} para guild {guild_id}")
+            except Exception as e:
+                logger.error(f"Erro ao reproduzir próxima faixa: {e}")
+        elif not queue and not player.current:
+            # Se a fila estiver vazia e não houver mais nada tocando, podemos limpar a mensagem de "agora tocando"
+            if guild_id in self.now_playing_messages:
+                try:
+                    msg_id, channel_id = self.now_playing_messages[guild_id]
+                    channel = self.bot.get_channel(channel_id)
+                    if channel:
+                        message = await channel.fetch_message(msg_id)
+                        await message.edit(content="Fila vazia. Use `/tocar` para adicionar mais músicas!", embed=None, view=None)
+                except Exception as e:
+                    logger.error(f"Erro ao atualizar mensagem 'agora tocando' após fim da fila para guild {guild_id}: {e}")
 
     @commands.Cog.listener()
     async def on_mafic_track_exception(self, player: mafic.Player, track: mafic.Track, exception: Exception):
@@ -865,6 +1023,18 @@ class Musica(commands.Cog):
                     await channel.send(f"❌ Erro ao tocar **{track.title}**: {exception}")
             except Exception as e:
                 logger.error(f"Erro ao enviar notificação de erro para guild {player.guild.id if player.guild else 'Unknown'}: {e}")
+                
+        # Tenta tocar a próxima música da fila
+        guild_id = player.guild.id if player.guild else None
+        if guild_id:
+            queue = self.get_queue(guild_id)
+            if queue:
+                try:
+                    next_track = queue.pop(0)
+                    await player.play(next_track, start_time=0)
+                    logger.info(f"Reproduzindo próxima faixa após erro: {next_track.title} para guild {guild_id}")
+                except Exception as e:
+                    logger.error(f"Erro ao reproduzir próxima faixa após erro: {e}")
 
     @commands.Cog.listener()
     async def on_mafic_track_stuck(self, player: mafic.Player, track: mafic.Track, threshold_ms: int):
@@ -903,7 +1073,10 @@ class Musica(commands.Cog):
                 try:
                     # Tenta destruir o player corretamente
                     player = self.players[member.guild.id]
-                    player.queue.clear()
+                    
+                    # Limpa a fila personalizada
+                    if member.guild.id in self.queues:
+                        self.queues[member.guild.id].clear()
                     
                     try:
                         await player.destroy()
@@ -917,6 +1090,14 @@ class Musica(commands.Cog):
                     if member.guild.id in self.track_requesters:
                         del self.track_requesters[member.guild.id]
                     
+                    # Limpa a fila personalizada
+                    if member.guild.id in self.queues:
+                        del self.queues[member.guild.id]
+                        
+                    # Limpa o estado de loop
+                    if member.guild.id in self.loop_states:
+                        del self.loop_states[member.guild.id]
+                    
                     # Atualiza a mensagem de "agora tocando"
                     if member.guild.id in self.now_playing_messages:
                         try:
@@ -924,7 +1105,7 @@ class Musica(commands.Cog):
                             channel = self.bot.get_channel(channel_id)
                             if channel:
                                 message = await channel.fetch_message(msg_id)
-                                await message.edit(content="Bot desconectado do canal de voz. Use `/tocar` para iniciar novamente.", embed=None, view=None)
+                                await message.edit(content="Bot desconectado do canal de voz. Use `/tocar` para iniciar novamente.", view=None, embed=None)
                             del self.now_playing_messages[member.guild.id]
                         except Exception as e:
                             logger.error(f"Erro ao atualizar mensagem 'agora tocando' após desconexão para guild {member.guild.id}: {e}")
