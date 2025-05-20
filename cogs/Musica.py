@@ -354,158 +354,137 @@ class Musica(commands.Cog):
         # Formato: {guild_id: CustomQueue}
         self.queues = {}
         
-        # Dicionário para armazenar os estados de loop
+        # Dicionário para armazenar o estado de loop
         # Formato: {guild_id: "none"|"track"|"queue"}
         self.loop_states = {}
         
-        logger.info("--- [COG MUSICA MAFIC] Cog Musica (Mafic) inicializada ---")
+        # Dicionário para armazenar a última música tocada
+        # Formato: {guild_id: track}
+        self.last_tracks = {}
 
-    def get_requester(self, guild_id, track):
-        """Obtém o requester de uma faixa."""
-        if guild_id not in self.track_requesters:
-            return None
-            
-        # Tenta obter pelo identificador da faixa
-        track_id = getattr(track, 'identifier', None) or getattr(track, 'id', None)
-        if not track_id:
-            return None
-            
-        return self.track_requesters[guild_id].get(track_id)
-        
-    def set_requester(self, guild_id, track, requester):
-        """Define o requester de uma faixa."""
-        # Inicializa o dicionário para o servidor se não existir
-        if guild_id not in self.track_requesters:
-            self.track_requesters[guild_id] = {}
-            
-        # Obtém o identificador da faixa
-        track_id = getattr(track, 'identifier', None) or getattr(track, 'id', None)
-        if not track_id:
-            logger.warning(f"Não foi possível obter identificador da faixa para definir requester: {track}")
-            return
-            
-        # Armazena o requester
-        self.track_requesters[guild_id][track_id] = requester
-        
-    def get_queue(self, guild_id):
+    def get_queue(self, guild_id: int) -> CustomQueue:
         """Obtém a fila personalizada para um servidor."""
         if guild_id not in self.queues:
             self.queues[guild_id] = CustomQueue()
         return self.queues[guild_id]
-        
-    def get_loop_state(self, guild_id):
+
+    def get_loop_state(self, guild_id: int) -> str:
         """Obtém o estado de loop para um servidor."""
         return self.loop_states.get(guild_id, "none")
-        
-    def set_loop_state(self, guild_id, state):
+
+    def set_loop_state(self, guild_id: int, state: str):
         """Define o estado de loop para um servidor."""
         self.loop_states[guild_id] = state
 
+    def set_requester(self, guild_id: int, track: mafic.Track, requester: nextcord.Member):
+        """Armazena o requester de uma faixa."""
+        if guild_id not in self.track_requesters:
+            self.track_requesters[guild_id] = {}
+        
+        # Usamos o identificador da faixa como chave
+        track_id = f"{track.identifier}_{track.title}"
+        self.track_requesters[guild_id][track_id] = requester
+
+    def get_requester(self, guild_id: int, track: mafic.Track) -> Optional[nextcord.Member]:
+        """Obtém o requester de uma faixa."""
+        if guild_id not in self.track_requesters:
+            return None
+        
+        # Usamos o identificador da faixa como chave
+        track_id = f"{track.identifier}_{track.title}"
+        return self.track_requesters[guild_id].get(track_id)
+
     async def get_player(self, interaction: Interaction) -> Optional[mafic.Player]:
         """Obtém ou cria um player para o servidor."""
-        # Verifica se o usuário está em um canal de voz
-        if not interaction.guild or not interaction.user.voice or not interaction.user.voice.channel:
+        if not interaction.guild_id:
             return None
-
-        # Verifica se o NodePool do Mafic está disponível
-        if not hasattr(self.bot, "mafic_pool") or not self.bot.mafic_pool:
-            logger.error("Mafic NodePool não encontrado no bot. O setup_hook do bot falhou?")
-            return None
-
-        # Verifica se já existe um player para este servidor
+            
+        # Se já existe um player para este servidor, retorna-o
         if interaction.guild_id in self.players:
             player = self.players[interaction.guild_id]
             
-            # Verifica se o player ainda está conectado
+            # Verifica se o player está conectado
             if player.connected:
                 return player
-            else:
-                # Player existe mas não está conectado, vamos limpar e criar um novo
-                logger.warning(f"Player para guild {interaction.guild_id} encontrado mas não conectado. Limpando...")
-                try:
-                    await player.destroy()
-                except Exception as e_destroy:
-                    logger.error(f"Erro ao tentar destruir player desconectado para guild {interaction.guild_id}: {e_destroy}")
                 
-                # Remove o player da lista
-                del self.players[interaction.guild_id]
-                
-                # Reseta contagem de tentativas de reconexão
-                self.reconnect_attempts[interaction.guild_id] = 0
-
-        # Incrementa contador de tentativas de reconexão
-        if interaction.guild_id not in self.reconnect_attempts:
-            self.reconnect_attempts[interaction.guild_id] = 0
+            # Se não estiver conectado, tenta reconectar
+            try:
+                # Tenta reconectar ao canal de voz do usuário
+                voice_channel = interaction.user.voice.channel
+                await player.connect(voice_channel.id)
+                return player
+            except Exception as e:
+                logger.error(f"Erro ao reconectar player para guild {interaction.guild_id}: {e}")
+                # Continua para criar um novo player
         
-        self.reconnect_attempts[interaction.guild_id] += 1
-        
-        # Verifica se excedeu o número máximo de tentativas
-        if self.reconnect_attempts[interaction.guild_id] > self.max_reconnect_attempts:
-            logger.warning(f"Máximo de tentativas de reconexão excedido para guild {interaction.guild_id}")
-            return None
-
+        # Cria um novo player
         try:
-            # Conecta ao canal de voz e cria o player
-            logger.info(f"Tentando conectar ao canal de voz: {interaction.user.voice.channel.name} (ID: {interaction.user.voice.channel.id}) para guild {interaction.guild_id}")
+            # Verifica se o usuário está em um canal de voz
+            if not interaction.user.voice or not interaction.user.voice.channel:
+                return None
+                
+            voice_channel = interaction.user.voice.channel
             
-            # Tenta obter um nó disponível
-            # Corrigido: Usando next(iter()) para obter o primeiro nó disponível
-            node = None
-            if self.bot.mafic_pool.nodes:
-                node = next(iter(self.bot.mafic_pool.nodes), None)
-            
-            if not node:
-                logger.error("Nenhum nó Lavalink disponível")
+            # Verifica se o bot tem permissão para se conectar e falar no canal
+            bot_member = interaction.guild.get_member(self.bot.user.id)
+            if not voice_channel.permissions_for(bot_member).connect or not voice_channel.permissions_for(bot_member).speak:
+                await interaction.followup.send(
+                    "Não tenho permissão para me conectar ou falar no seu canal de voz. "
+                    "Por favor, verifique as permissões do canal.", 
+                    ephemeral=True
+                )
                 return None
             
-            # Conecta ao canal de voz
-            player: mafic.Player = await interaction.user.voice.channel.connect(cls=mafic.Player)
-            logger.info(f"Conectado ao canal de voz. Player: {player}")
-
-            # Tenta definir self_deaf após a conexão
-            if player and player.guild and player.guild.me:
-                try:
-                    await player.guild.me.edit(deafen=True)
-                    logger.info(f"Bot definido como surdo no canal para guild {interaction.guild_id}")
-                except Exception as e_deafen:
-                    logger.warning(f"Não foi possível definir o bot como surdo para guild {interaction.guild_id}: {e_deafen}")
-            else:
-                logger.warning(f"Não foi possível definir o bot como surdo: player, guild ou guild.me não disponíveis após conexão. Guild ID: {interaction.guild_id}")
-            
-            # Armazena o player e reseta contador de tentativas
-            self.players[interaction.guild_id] = player
-            self.reconnect_attempts[interaction.guild_id] = 0
-            
-            # Inicializa o dicionário de requesters para este servidor
-            if interaction.guild_id not in self.track_requesters:
-                self.track_requesters[interaction.guild_id] = {}
+            # Cria um novo player e conecta ao canal de voz
+            try:
+                # Tenta obter um nó do pool
+                if not hasattr(self.bot, "mafic_pool") or not self.bot.mafic_pool:
+                    await interaction.followup.send(
+                        "O sistema de música não está inicializado corretamente. "
+                        "Por favor, informe ao administrador do bot.", 
+                        ephemeral=True
+                    )
+                    return None
+                    
+                # Cria o player
+                player = await self.bot.mafic_pool.create_player(interaction.guild_id)
                 
-            # Inicializa a fila personalizada para este servidor
-            if interaction.guild_id not in self.queues:
-                self.queues[interaction.guild_id] = CustomQueue()
+                # Conecta ao canal de voz
+                await player.connect(voice_channel.id)
                 
-            # Inicializa o estado de loop para este servidor
-            if interaction.guild_id not in self.loop_states:
-                self.loop_states[interaction.guild_id] = "none"
-            
-            logger.info(f"Player criado e armazenado para guild {interaction.guild_id} no canal {interaction.user.voice.channel.name}")
-            return player
-        except mafic.errors.NoNodesAvailable:
-            logger.error("Falha ao conectar: Nenhum nó Lavalink disponível.")
-            return None
-        except mafic.errors.HTTPNotFound as e:
-            logger.error(f"Erro HTTP 404 ao conectar ao canal de voz: {e}")
-            # Tenta reconectar ao Lavalink se for um erro de sessão
-            if "Session not found" in str(e):
-                logger.warning("Sessão não encontrada. Tentando reconectar ao Lavalink...")
-                try:
-                    # Tenta reconectar o nó
-                    for node in self.bot.mafic_pool.nodes:
-                        await node.reconnect()
-                    logger.info("Reconexão ao Lavalink concluída")
-                except Exception as reconnect_error:
-                    logger.error(f"Erro ao reconectar ao Lavalink: {reconnect_error}")
-            return None
+                # Define o volume padrão
+                await player.set_volume(70)
+                
+                # Armazena o player
+                self.players[interaction.guild_id] = player
+                
+                # Reseta o contador de tentativas de reconexão
+                self.reconnect_attempts[interaction.guild_id] = 0
+                
+                logger.info(f"Novo player criado e conectado para guild {interaction.guild_id} no canal {voice_channel.name}")
+                return player
+            except mafic.errors.NoNodesAvailable:
+                logger.error(f"Nenhum nó Lavalink disponível para guild {interaction.guild_id}")
+                await interaction.followup.send(
+                    "O servidor de música não está disponível no momento. "
+                    "Por favor, tente novamente mais tarde ou informe ao administrador do bot.", 
+                    ephemeral=True
+                )
+                
+                # Incrementa o contador de tentativas de reconexão
+                self.reconnect_attempts[interaction.guild_id] = self.reconnect_attempts.get(interaction.guild_id, 0) + 1
+                
+                # Se excedeu o número máximo de tentativas, tenta reconectar o nó
+                if self.reconnect_attempts.get(interaction.guild_id, 0) >= self.max_reconnect_attempts:
+                    logger.warning(f"Tentando reconectar ao Lavalink após {self.max_reconnect_attempts} falhas para guild {interaction.guild_id}")
+                    try:
+                        # Tenta reconectar o nó
+                        for node in self.bot.mafic_pool.nodes:
+                            await node.reconnect()
+                        logger.info("Reconexão ao Lavalink concluída")
+                    except Exception as reconnect_error:
+                        logger.error(f"Erro ao reconectar ao Lavalink: {reconnect_error}")
+                return None
         except Exception as e:
             logger.error(f"Erro ao conectar ao canal de voz para guild {interaction.guild_id}: {e}", exc_info=True)
             return None
@@ -701,7 +680,7 @@ class Musica(commands.Cog):
         
         # Cria um embed estilizado para o painel de música
         embed = nextcord.Embed(
-            title=f"{EMOJIS['music']} MUSIC PANEL",
+            title=f"{EMOJIS['music']} PAINEL DE MÚSICA",
             description=f"**[{current_track.title}]({current_track.uri})**",
             color=nextcord.Color.red()  # Cor vermelha para combinar com os botões
         )
@@ -711,19 +690,19 @@ class Musica(commands.Cog):
         
         # Adiciona campos para Requested By, Duration e Music Author
         embed.add_field(
-            name="Requested By",
+            name="Adicionado por",
             value=f"{requester.mention if requester else 'Desconhecido'}",
             inline=True
         )
         
         embed.add_field(
-            name="Duration",
+            name="Duração",
             value=self.format_duration(current_track.length),
             inline=True
         )
         
         embed.add_field(
-            name="Music Author",
+            name="Autor",
             value=current_track.author,
             inline=True
         )
@@ -832,13 +811,13 @@ class Musica(commands.Cog):
         embed.add_field(name=f"{EMOJIS['volume_up']} Volume", value=f"{player.volume}%", inline=True)
         
         if player.paused:
-            embed.add_field(name=f"{EMOJIS['pause']} Status", value="Pausado", inline=True)
+            embed.add_field(name="⏸️ Status", value="Pausado", inline=True)
         else:
-            embed.add_field(name=f"{EMOJIS['play']} Status", value="Tocando", inline=True)
+            embed.add_field(name="▶️ Status", value="Tocando", inline=True)
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @nextcord.slash_command(name="pular", description="Pula para a próxima música na fila.")
+    @nextcord.slash_command(name="pular", description="Pula a música atual.")
     async def skip(self, interaction: Interaction):
         """Comando para pular a música atual."""
         if not interaction.guild_id or interaction.guild_id not in self.players:
@@ -852,51 +831,31 @@ class Musica(commands.Cog):
 
         await player.stop()  # Mafic lida com a próxima música da fila automaticamente
         await interaction.response.send_message(f"{EMOJIS['skip']} Música pulada!")
-        # A mensagem de "agora tocando" será atualizada pelo evento on_track_end/on_track_start
 
-    @nextcord.slash_command(name="pausar", description="Pausa a música atual.")
+    @nextcord.slash_command(name="pausar", description="Pausa ou retoma a música atual.")
     async def pause(self, interaction: Interaction):
-        """Comando para pausar a música atual."""
+        """Comando para pausar ou retomar a música atual."""
         if not interaction.guild_id or interaction.guild_id not in self.players:
             await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
             return
 
         player = self.players[interaction.guild_id]
         if not player.connected or not player.current:
-            await interaction.response.send_message("Não há nada tocando para pausar.", ephemeral=True)
+            await interaction.response.send_message("Não há nada tocando para pausar/continuar.", ephemeral=True)
             return
 
         if player.paused:
-            await interaction.response.send_message("A música já está pausada. Use `/continuar` para retomar.", ephemeral=True)
-            return
+            await player.resume()
+            await interaction.response.send_message(f"{EMOJIS['play']} Música retomada!")
+        else:
+            await player.pause()
+            await interaction.response.send_message(f"{EMOJIS['pause']} Música pausada!")
 
-        await player.pause()
-        await interaction.response.send_message(f"{EMOJIS['pause']} Música pausada!")
         await self.update_now_playing_message(player)
 
-    @nextcord.slash_command(name="continuar", description="Continua a música pausada.")
-    async def resume(self, interaction: Interaction):
-        """Comando para continuar a música pausada."""
-        if not interaction.guild_id or interaction.guild_id not in self.players:
-            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
-            return
-
-        player = self.players[interaction.guild_id]
-        if not player.connected or not player.current:
-            await interaction.response.send_message("Não há nada tocando para continuar.", ephemeral=True)
-            return
-
-        if not player.paused:
-            await interaction.response.send_message("A música já está tocando. Use `/pausar` para pausar.", ephemeral=True)
-            return
-
-        await player.resume()
-        await interaction.response.send_message(f"{EMOJIS['play']} Música retomada!")
-        await self.update_now_playing_message(player)
-
-    @nextcord.slash_command(name="parar", description="Para a música e limpa a fila.")
+    @nextcord.slash_command(name="parar", description="Para a reprodução e limpa a fila.")
     async def stop(self, interaction: Interaction):
-        """Comando para parar a música e limpar a fila."""
+        """Comando para parar a reprodução e limpar a fila."""
         if not interaction.guild_id or interaction.guild_id not in self.players:
             await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
             return
@@ -917,13 +876,13 @@ class Musica(commands.Cog):
         except Exception as e:
             logger.error(f"Erro ao desconectar player para guild {interaction.guild_id}: {e}")
 
-        # Remove o player da lista do cog
+        # Remove o player da lista
         del self.players[interaction.guild_id]
         
         # Limpa o dicionário de requesters
         if interaction.guild_id in self.track_requesters:
             del self.track_requesters[interaction.guild_id]
-            
+        
         # Limpa a fila personalizada
         if interaction.guild_id in self.queues:
             del self.queues[interaction.guild_id]
@@ -931,10 +890,15 @@ class Musica(commands.Cog):
         # Limpa o estado de loop
         if interaction.guild_id in self.loop_states:
             del self.loop_states[interaction.guild_id]
+            
+        # Limpa a última música tocada
+        if interaction.guild_id in self.last_tracks:
+            del self.last_tracks[interaction.guild_id]
 
         await interaction.response.send_message(f"{EMOJIS['stop']} Player parado, fila limpa e bot desconectado.")
 
-        if self.now_playing_messages.get(interaction.guild_id):
+        # Atualiza a mensagem de "agora tocando"
+        if interaction.guild_id in self.now_playing_messages:
             try:
                 msg_id, channel_id = self.now_playing_messages[interaction.guild_id]
                 channel = self.bot.get_channel(channel_id)
@@ -942,24 +906,22 @@ class Musica(commands.Cog):
                     message = await channel.fetch_message(msg_id)
                     await message.edit(content="Player desconectado. Use `/tocar` para iniciar novamente.", view=None, embed=None)
                 del self.now_playing_messages[interaction.guild_id]
-            except nextcord.NotFound:
-                logger.warning(f"Mensagem 'agora tocando' não encontrada para guild {interaction.guild_id} ao parar.")
             except Exception as e:
-                logger.error(f"Erro ao limpar mensagem 'agora tocando' para guild {interaction.guild_id}: {e}")
+                logger.error(f"Erro ao atualizar mensagem 'agora tocando' após parar para guild {interaction.guild_id}: {e}")
 
-    @nextcord.slash_command(name="volume", description="Ajusta o volume da música (0-100).")
+    @nextcord.slash_command(name="volume", description="Ajusta o volume da reprodução (0-100).")
     async def volume(
-        self,
-        interaction: Interaction,
-        nivel: int = SlashOption(
-            name="nivel",
-            description="Nível de volume (0-100)",
+        self, 
+        interaction: Interaction, 
+        volume: int = SlashOption(
+            name="nivel", 
+            description="Nível de volume (0-100)", 
             required=True,
             min_value=0,
             max_value=100
         )
     ):
-        """Comando para ajustar o volume da música."""
+        """Comando para ajustar o volume da reprodução."""
         if not interaction.guild_id or interaction.guild_id not in self.players:
             await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
             return
@@ -969,22 +931,25 @@ class Musica(commands.Cog):
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
 
-        await player.set_volume(nivel)
-        await interaction.response.send_message(f"{EMOJIS['volume_up']} Volume ajustado para {nivel}%.")
+        await player.set_volume(volume)
+        
+        emoji = EMOJIS["volume_up"] if volume >= 50 else EMOJIS["volume_down"]
+        await interaction.response.send_message(f"{emoji} Volume ajustado para {volume}%")
+        
         await self.update_now_playing_message(player)
 
-    @nextcord.slash_command(name="loop", description="Alterna entre modos de loop (desativado, faixa, fila).")
+    @nextcord.slash_command(name="loop", description="Configura o modo de repetição (desativado, faixa, fila).")
     async def loop(
-        self,
-        interaction: Interaction,
+        self, 
+        interaction: Interaction, 
         modo: str = SlashOption(
-            name="modo",
-            description="Modo de loop",
+            name="modo", 
+            description="Modo de repetição", 
             required=True,
             choices={"Desativado": "none", "Faixa Atual": "track", "Fila Inteira": "queue"}
         )
     ):
-        """Comando para alternar entre modos de loop."""
+        """Comando para configurar o modo de repetição."""
         if not interaction.guild_id or interaction.guild_id not in self.players:
             await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
             return
@@ -994,7 +959,6 @@ class Musica(commands.Cog):
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
 
-        # Define o estado de loop para este servidor
         self.set_loop_state(interaction.guild_id, modo)
         
         if modo == "none":
@@ -1057,13 +1021,33 @@ class Musica(commands.Cog):
         if not player.guild:
             return
 
-        guild_id = player.guild.id  # Corrigido: Usando player.guild.id em vez de player.guild_id
+        guild_id = player.guild.id
         logger.info(f"Faixa iniciada: {track.title} em {player.guild.name} ({guild_id})")
+        
+        # Armazena a última música tocada para referência
+        last_track = self.last_tracks.get(guild_id)
+        
+        # Envia mensagem de confirmação de início de música
+        if last_track:
+            # Encontra o canal para enviar a mensagem
+            channel = None
+            if guild_id in self.now_playing_messages:
+                msg_id, channel_id = self.now_playing_messages[guild_id]
+                channel = self.bot.get_channel(channel_id)
+            
+            if channel:
+                try:
+                    await channel.send(f"🎵 Música **{last_track.title}** acabou, música **{track.title}** começou!")
+                except Exception as e:
+                    logger.error(f"Erro ao enviar mensagem de confirmação para guild {guild_id}: {e}")
+        
+        # Atualiza a última música tocada
+        self.last_tracks[guild_id] = track
 
         # Cria ou atualiza a mensagem de "agora tocando"
         # Cria um embed estilizado para o painel de música
         embed = nextcord.Embed(
-            title=f"{EMOJIS['music']} MUSIC PANEL",
+            title=f"{EMOJIS['music']} PAINEL DE MÚSICA",
             description=f"**[{track.title}]({track.uri})**",
             color=nextcord.Color.red()  # Cor vermelha para combinar com os botões
         )
@@ -1073,19 +1057,19 @@ class Musica(commands.Cog):
         
         # Adiciona campos para Requested By, Duration e Music Author
         embed.add_field(
-            name="Requested By",
+            name="Adicionado por",
             value=f"{requester.mention if requester else 'Desconhecido'}",
             inline=True
         )
         
         embed.add_field(
-            name="Duration",
+            name="Duração",
             value=self.format_duration(track.length),
             inline=True
         )
         
         embed.add_field(
-            name="Music Author",
+            name="Autor",
             value=track.author,
             inline=True
         )
@@ -1163,7 +1147,7 @@ class Musica(commands.Cog):
         if not player or not player.guild:
             return
             
-        guild_id = player.guild.id  # Corrigido: Usando player.guild.id em vez de player.guild_id
+        guild_id = player.guild.id
         
         # Obtém o estado de loop para este servidor
         loop_state = self.get_loop_state(guild_id)
@@ -1202,6 +1186,9 @@ class Musica(commands.Cog):
                     if channel:
                         message = await channel.fetch_message(msg_id)
                         await message.edit(content="Fila vazia. Use `/tocar` para adicionar mais músicas!", embed=None, view=None)
+                        
+                        # Envia mensagem de confirmação de fim de música
+                        await channel.send(f"🎵 Música **{track.title}** acabou. A fila está vazia!")
                 except Exception as e:
                     logger.error(f"Erro ao atualizar mensagem 'agora tocando' após fim da fila para guild {guild_id}: {e}")
 
@@ -1293,6 +1280,10 @@ class Musica(commands.Cog):
                     # Limpa o estado de loop
                     if member.guild.id in self.loop_states:
                         del self.loop_states[member.guild.id]
+                        
+                    # Limpa a última música tocada
+                    if member.guild.id in self.last_tracks:
+                        del self.last_tracks[member.guild.id]
                     
                     # Atualiza a mensagem de "agora tocando"
                     if member.guild.id in self.now_playing_messages:
@@ -1308,68 +1299,5 @@ class Musica(commands.Cog):
                 except Exception as e:
                     logger.error(f"Erro ao limpar player após desconexão para guild {member.guild.id}: {e}")
 
-    @commands.Cog.listener()
-    async def on_mafic_node_ready(self, node: mafic.Node):
-        """Evento disparado quando um nó Lavalink fica pronto."""
-        logger.info(f"Nó Lavalink {node.label} está pronto!")
-        
-        # Reseta contadores de tentativas de reconexão
-        self.reconnect_attempts = {}
-
-    @commands.Cog.listener()
-    async def on_mafic_node_unavailable(self, node: mafic.Node):
-        """Evento disparado quando um nó Lavalink fica indisponível."""
-        logger.warning(f"Nó Lavalink {node.label} ficou indisponível!")
-        
-        # Tenta reconectar o nó
-        try:
-            await node.reconnect()
-            logger.info(f"Tentativa de reconexão ao nó {node.label} iniciada")
-        except Exception as e:
-            logger.error(f"Erro ao tentar reconectar ao nó {node.label}: {e}")
-
-    # Tratamento de erros para comandos de aplicação
-    @commands.Cog.listener()
-    async def on_application_command_error(self, interaction: Interaction, error):
-        # Verifica se o erro é de um comando desta cog
-        if hasattr(interaction, 'application_command'):
-            try:
-                # Verifica tipos específicos de erros
-                if isinstance(error, commands.CommandOnCooldown):
-                    await interaction.response.send_message(
-                        f"⚠️ Este comando está em cooldown. Tente novamente em {error.retry_after:.1f} segundos.",
-                        ephemeral=True
-                    )
-                elif isinstance(error, mafic.errors.HTTPNotFound):
-                    await interaction.response.send_message(
-                        f"⚠️ Erro de conexão com o servidor de música. Tente usar o comando `/reconectar` e depois tente novamente.",
-                        ephemeral=True
-                    )
-                    logger.error(f"Erro HTTP 404 do Lavalink: {error}")
-                elif isinstance(error, nextcord.errors.InteractionResponded):
-                    # Interação já respondida, apenas loga
-                    logger.warning(f"Interação já respondida: {error}")
-                else:
-                    # Erro genérico
-                    try:
-                        if not interaction.response.is_done():
-                            await interaction.response.send_message(
-                                f"⚠️ Ocorreu um erro ao executar este comando: {str(error)}",
-                                ephemeral=True
-                            )
-                        else:
-                            await interaction.followup.send(
-                                f"⚠️ Ocorreu um erro ao executar este comando: {str(error)}",
-                                ephemeral=True
-                            )
-                    except Exception as e:
-                        logger.error(f"Erro ao enviar mensagem de erro: {e}")
-                
-                # Loga o erro para debug
-                logger.error(f"Erro em comando de música: {error}", exc_info=True)
-            except Exception as e:
-                logger.error(f"Erro ao tratar erro de comando: {e}", exc_info=True)
-
-# Função setup para carregar a cog
 def setup(bot):
     bot.add_cog(Musica(bot))
