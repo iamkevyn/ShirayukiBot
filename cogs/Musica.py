@@ -371,28 +371,36 @@ class Musica(commands.Cog):
             
             # Se não encontrar no ambiente, tenta carregar de um arquivo de configuração
             if not client_id or not client_secret:
-                try:
-                    config_path = os.path.join(os.path.dirname(__file__), "..", "config", "spotify.json")
-                    if os.path.exists(config_path):
-                        with open(config_path, "r") as f:
+                config_dir = os.path.dirname(os.path.dirname(__file__))
+                config_path = os.path.join(config_dir, "config.json")
+                
+                if os.path.exists(config_path):
+                    try:
+                         with open(config_path, "r") as f:
                             config = json.load(f)
-                            client_id = config.get("client_id")
-                            client_secret = config.get("client_secret")
-                except Exception as e:
-                    logger.error(f"Erro ao carregar configuração do Spotify: {e}")
+                            
+                        if "spotify" in config:
+                            client_id = config["spotify"].get("client_id")
+                            client_secret = config["spotify"].get("client_secret")
+                    except Exception as e:
+                        logger.error(f"Erro ao carregar configuração do Spotify: {e}")
             
             # Se encontrou as credenciais, inicializa o cliente
             if client_id and client_secret:
-                auth_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
-                self.spotify = spotipy.Spotify(auth_manager=auth_manager)
+                self.spotify = spotipy.Spotify(
+                    auth_manager=SpotifyClientCredentials(
+                        client_id=client_id,
+                        client_secret=client_secret
+                    )
+                )
                 logger.info("Cliente do Spotify inicializado com sucesso!")
             else:
                 self.spotify = None
-                logger.warning("Credenciais do Spotify não encontradas. Funcionalidades do Spotify estarão desativadas.")
+                logger.warning("Credenciais do Spotify não encontradas. Funcionalidades do Spotify estarão limitadas.")
         except Exception as e:
             self.spotify = None
             logger.error(f"Erro ao inicializar cliente do Spotify: {e}")
-    
+            
     async def initialize_mafic(self):
         """Inicializa o pool do Mafic quando o bot estiver pronto."""
         await self.bot.wait_until_ready()
@@ -415,35 +423,40 @@ class Musica(commands.Cog):
             logger.info("Pool Mafic inicializado com sucesso.")
         except Exception as e:
             logger.error(f"Erro ao inicializar o pool Mafic: {e}", exc_info=True)
-    
+            
     def get_queue(self, guild_id: int) -> List[mafic.Track]:
         """Obtém a fila personalizada para um servidor."""
         if guild_id not in self.queues:
             self.queues[guild_id] = []
         return self.queues[guild_id]
-    
+        
     def set_requester(self, guild_id: int, track: mafic.Track, requester: nextcord.Member):
         """Define o requester para uma faixa."""
         if guild_id not in self.track_requesters:
             self.track_requesters[guild_id] = {}
-        
+            
         # Usa o identificador da faixa como chave
-        track_id = track.identifier
+        track_id = self.get_track_identifier(track)
         self.track_requesters[guild_id][track_id] = requester
-    
+        
     def get_requester(self, guild_id: int, track: mafic.Track) -> Optional[nextcord.Member]:
         """Obtém o requester para uma faixa."""
         if guild_id not in self.track_requesters:
             return None
-        
+            
         # Usa o identificador da faixa como chave
-        track_id = track.identifier
+        track_id = self.get_track_identifier(track)
         return self.track_requesters[guild_id].get(track_id)
-    
+        
+    def get_track_identifier(self, track: mafic.Track) -> str:
+        """Obtém um identificador único para uma faixa."""
+        # Usa uma combinação de título, autor e duração como identificador
+        return f"{track.title}|{track.author}|{track.length}"
+        
     def get_loop_state(self, guild_id: int) -> str:
         """Obtém o estado de loop para um servidor."""
         return self.loop_states.get(guild_id, "none")
-    
+        
     def set_loop_state(self, guild_id: int, state: str):
         """Define o estado de loop para um servidor."""
         self.loop_states[guild_id] = state
@@ -708,7 +721,7 @@ class Musica(commands.Cog):
             else:
                 # Cria um novo player e conecta ao canal de voz
                 # Usando create_session em vez de create_player para compatibilidade com versões mais recentes do Mafic
-                node = self.bot.mafic_pool.get_node("MAIN")
+                node = self.bot.mafic_pool.get_node()
                 player = await node.create_session(interaction.guild_id, voice_channel.id)
                 self.players[interaction.guild_id] = player
                 
@@ -826,7 +839,7 @@ class Musica(commands.Cog):
             else:
                 # Cria um novo player e conecta ao canal de voz
                 # Usando create_session em vez de create_player para compatibilidade com versões mais recentes do Mafic
-                node = self.bot.mafic_pool.get_node("MAIN")
+                node = self.bot.mafic_pool.get_node()
                 player = await node.create_session(interaction.guild_id, voice_channel.id)
                 self.players[interaction.guild_id] = player
                 
@@ -1580,18 +1593,22 @@ class Musica(commands.Cog):
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: nextcord.Member, before: nextcord.VoiceState, after: nextcord.VoiceState):
         """Evento disparado quando o estado de voz de um membro muda."""
+        # Ignora se não for o próprio bot
+        if member.id != self.bot.user.id:
+            return
+            
         # Verifica se o bot foi desconectado do canal de voz
-        if member.id == self.bot.user.id and before.channel and not after.channel:
+        if before.channel and not after.channel:
             guild_id = member.guild.id
             
-            # Verifica se há um player para este servidor
+            # Verifica se há um player ativo para este servidor
             if guild_id in self.players:
-                player = self.players[guild_id]
+                logger.info(f"Bot desconectado do canal de voz em {member.guild.name} ({guild_id})")
                 
                 # Limpa a fila personalizada
                 if guild_id in self.queues:
                     self.queues[guild_id].clear()
-                    
+                
                 # Remove o player da lista
                 del self.players[guild_id]
                 
@@ -1607,74 +1624,70 @@ class Musica(commands.Cog):
                 if guild_id in self.loop_states:
                     del self.loop_states[guild_id]
                     
+                # Limpa o estado de autoplay
+                if guild_id in self.autoplay_states:
+                    del self.autoplay_states[guild_id]
+                    
                 # Limpa a última música tocada
                 if guild_id in self.last_tracks:
                     del self.last_tracks[guild_id]
                     
                 # Limpa a mensagem de "agora tocando"
                 if guild_id in self.now_playing_messages:
-                    del self.now_playing_messages[guild_id]
-                    
-                logger.info(f"Player removido após desconexão em {member.guild.name}")
-        
-        # Verifica se o bot está sozinho no canal de voz
-        elif member.id != self.bot.user.id and before.channel and not after.channel:
-            # Verifica se o membro saiu de um canal onde o bot está
-            if before.channel.members and self.bot.user in before.channel.members:
-                # Verifica se só restou o bot no canal
-                if len(before.channel.members) == 1:
-                    guild_id = before.channel.guild.id
-                    
-                    # Verifica se há um player para este servidor
-                    if guild_id in self.players:
-                        player = self.players[guild_id]
-                        
-                        # Agenda a desconexão após 5 minutos sozinho
-                        await asyncio.sleep(300)  # 5 minutos
-                        
-                        # Verifica novamente se o bot ainda está sozinho
-                        channel = self.bot.get_channel(before.channel.id)
-                        if channel and len(channel.members) == 1 and self.bot.user in channel.members:
+                    try:
+                        msg_id, channel_id = self.now_playing_messages[guild_id]
+                        channel = self.bot.get_channel(channel_id)
+                        if channel:
                             try:
-                                # Limpa a fila personalizada
-                                if guild_id in self.queues:
-                                    self.queues[guild_id].clear()
-                                    
-                                await player.disconnect(force=True)
-                                
-                                # Remove o player da lista
-                                if guild_id in self.players:
-                                    del self.players[guild_id]
-                                
-                                # Limpa o dicionário de requesters
-                                if guild_id in self.track_requesters:
-                                    del self.track_requesters[guild_id]
-                                
-                                # Limpa a fila personalizada
-                                if guild_id in self.queues:
-                                    del self.queues[guild_id]
-                                    
-                                # Limpa o estado de loop
-                                if guild_id in self.loop_states:
-                                    del self.loop_states[guild_id]
-                                    
-                                # Limpa a última música tocada
-                                if guild_id in self.last_tracks:
-                                    del self.last_tracks[guild_id]
-                                    
-                                # Limpa a mensagem de "agora tocando"
-                                if guild_id in self.now_playing_messages:
-                                    _, channel_id = self.now_playing_messages[guild_id]
-                                    text_channel = self.bot.get_channel(channel_id)
-                                    
-                                    if text_channel:
-                                        await text_channel.send(f"{EMOJIS['stop']} Desconectado após 5 minutos sozinho no canal de voz.")
-                                    
-                                    del self.now_playing_messages[guild_id]
-                                    
-                                logger.info(f"Player desconectado após 5 minutos sozinho em {before.channel.guild.name}")
+                                message = await channel.fetch_message(msg_id)
+                                await message.edit(content="🚶 Bot desconectado do canal de voz.", embed=None, view=None)
                             except Exception as e:
-                                logger.error(f"Erro ao desconectar player após ficar sozinho: {e}")
+                                logger.error(f"Erro ao atualizar mensagem 'agora tocando' para guild {guild_id}: {e}")
+                    except Exception as e:
+                        logger.error(f"Erro ao processar mensagem 'agora tocando' para guild {guild_id}: {e}")
+                    
+                    # Limpa a referência da mensagem
+                    del self.now_playing_messages[guild_id]
+    
+    async def get_or_create_player(self, interaction: Interaction) -> Optional[mafic.Player]:
+        """Obtém ou cria um player para o servidor."""
+        # Verifica se o usuário está em um canal de voz
+        if not interaction.user.voice:
+            await interaction.followup.send("Você precisa estar em um canal de voz para usar este comando.", ephemeral=True)
+            return None
+            
+        voice_channel = interaction.user.voice.channel
+        
+        # Verifica se o bot tem permissão para entrar no canal de voz
+        permissions = voice_channel.permissions_for(interaction.guild.me)
+        if not permissions.connect or not permissions.speak:
+            await interaction.followup.send("Não tenho permissão para entrar ou falar no seu canal de voz.", ephemeral=True)
+            return None
+            
+        try:
+            # Verifica se já existe um player para este servidor
+            if interaction.guild_id in self.players:
+                player = self.players[interaction.guild_id]
+                
+                # Se o player não estiver conectado, conecta ao canal de voz
+                if not player.connected:
+                    await player.connect(voice_channel.id)
+            else:
+                # Cria um novo player e conecta ao canal de voz
+                # Usando create_session em vez de create_player para compatibilidade com versões mais recentes do Mafic
+                node = self.bot.mafic_pool.get_node()
+                player = await node.create_session(interaction.guild_id, voice_channel.id)
+                self.players[interaction.guild_id] = player
+                
+                # Define o volume padrão
+                await self.set_player_volume(player, 70)
+                
+            logger.info(f"Player conectado ao canal de voz {voice_channel.name} em {interaction.guild.name}")
+            return player
+        except Exception as e:
+            logger.error(f"Erro ao conectar ao canal de voz: {e}", exc_info=True)
+            await interaction.followup.send(f"Erro ao conectar ao canal de voz: {e}", ephemeral=True)
+            return None
 
-def setup(bot):
+def setup(bot: commands.Bot):
     bot.add_cog(Musica(bot))
