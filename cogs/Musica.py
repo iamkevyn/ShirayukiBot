@@ -371,564 +371,257 @@ class Musica(commands.Cog):
             
             # Se não encontrar no ambiente, tenta carregar de um arquivo de configuração
             if not client_id or not client_secret:
-                config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+                config_dir = os.path.dirname(os.path.dirname(__file__))
+                config_path = os.path.join(config_dir, "config.json")
+                
                 if os.path.exists(config_path):
-                    with open(config_path, "r") as f:
-                        config = json.load(f)
-                        client_id = config.get("spotify", {}).get("client_id")
-                        client_secret = config.get("spotify", {}).get("client_secret")
+                    try:
+                        with open(config_path, "r") as f:
+                            config = json.load(f)
+                            
+                        if "spotify" in config:
+                            client_id = config["spotify"].get("client_id")
+                            client_secret = config["spotify"].get("client_secret")
+                    except Exception as e:
+                        logger.error(f"Erro ao carregar configuração do Spotify: {e}")
             
+            # Se encontrou as credenciais, inicializa o cliente
             if client_id and client_secret:
-                auth_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
-                self.spotify = spotipy.Spotify(auth_manager=auth_manager)
-                logger.info("Cliente do Spotify inicializado com sucesso.")
+                self.spotify = spotipy.Spotify(
+                    auth_manager=SpotifyClientCredentials(
+                        client_id=client_id,
+                        client_secret=client_secret
+                    )
+                )
+                logger.info("Cliente do Spotify inicializado com sucesso!")
             else:
-                logger.warning("Credenciais do Spotify não encontradas. A integração com Spotify será limitada.")
                 self.spotify = None
+                logger.warning("Credenciais do Spotify não encontradas. Funcionalidades do Spotify estarão limitadas.")
         except Exception as e:
-            logger.error(f"Erro ao inicializar cliente do Spotify: {e}", exc_info=True)
             self.spotify = None
-        
+            logger.error(f"Erro ao inicializar cliente do Spotify: {e}")
+            
     async def initialize_mafic(self):
         """Inicializa o pool do Mafic quando o bot estiver pronto."""
         await self.bot.wait_until_ready()
         
-        # Verifica se o bot já tem um pool Mafic inicializado
-        if hasattr(self.bot, "mafic_pool") and self.bot.mafic_pool:
-            logger.info("Pool Mafic já inicializado.")
-            return
-            
         try:
-            # Cria o pool do Mafic com os nós do Lavalink
-            # Você pode adicionar mais nós conforme necessário
+            # Cria o pool do Mafic
             self.bot.mafic_pool = mafic.NodePool(self.bot)
             
             # Adiciona o nó do Lavalink
-            # Substitua host, port, password pelos valores corretos do seu servidor Lavalink
+            # Tenta obter as credenciais do ambiente
+            host = os.getenv("LAVALINK_HOST", "localhost")
+            port = int(os.getenv("LAVALINK_PORT", "2333"))
+            password = os.getenv("LAVALINK_PASSWORD", "youshallnotpass")
+            secure = os.getenv("LAVALINK_SECURE", "false").lower() == "true"
+            
+            # Se não encontrar no ambiente, tenta carregar de um arquivo de configuração
+            if host == "localhost" and port == 2333 and password == "youshallnotpass":
+                config_dir = os.path.dirname(os.path.dirname(__file__))
+                config_path = os.path.join(config_dir, "config.json")
+                
+                if os.path.exists(config_path):
+                    try:
+                        with open(config_path, "r") as f:
+                            config = json.load(f)
+                            
+                        if "lavalink" in config:
+                            host = config["lavalink"].get("host", host)
+                            port = int(config["lavalink"].get("port", port))
+                            password = config["lavalink"].get("password", password)
+                            secure = config["lavalink"].get("secure", secure)
+                    except Exception as e:
+                        logger.error(f"Erro ao carregar configuração do Lavalink: {e}")
+            
+            # Adiciona o nó ao pool
             await self.bot.mafic_pool.create_node(
-                host="127.0.0.1",
-                port=2333,
-                label="MAIN",
-                password="youshallnotpass",
-                secure=False
+                host=host,
+                port=port,
+                label="default-node",
+                password=password,
+                secure=secure
             )
             
-            logger.info("Pool Mafic inicializado com sucesso.")
+            logger.info(f"Nó do Lavalink adicionado com sucesso! Host: {host}, Port: {port}")
         except Exception as e:
-            logger.error(f"Erro ao inicializar o pool Mafic: {e}", exc_info=True)
-    
+            logger.error(f"Erro ao inicializar pool do Mafic: {e}", exc_info=True)
+            
     def get_queue(self, guild_id: int) -> List[mafic.Track]:
-        """Obtém a fila personalizada para um servidor específico."""
+        """Obtém a fila personalizada para um servidor."""
         if guild_id not in self.queues:
             self.queues[guild_id] = []
         return self.queues[guild_id]
-    
+        
     def set_requester(self, guild_id: int, track: mafic.Track, requester: nextcord.Member):
-        """Armazena o requester para uma faixa específica."""
+        """Define o requester para uma faixa."""
         if guild_id not in self.track_requesters:
             self.track_requesters[guild_id] = {}
-        
-        # Usa o identificador único da faixa como chave
-        track_id = f"{track.title}:{track.uri}"
+            
+        # Usa o identificador da faixa como chave
+        track_id = self.get_track_identifier(track)
         self.track_requesters[guild_id][track_id] = requester
-    
+        
     def get_requester(self, guild_id: int, track: mafic.Track) -> Optional[nextcord.Member]:
-        """Obtém o requester para uma faixa específica."""
+        """Obtém o requester para uma faixa."""
         if guild_id not in self.track_requesters:
             return None
-        
-        # Usa o identificador único da faixa como chave
-        track_id = f"{track.title}:{track.uri}"
+            
+        # Usa o identificador da faixa como chave
+        track_id = self.get_track_identifier(track)
         return self.track_requesters[guild_id].get(track_id)
-    
+        
+    def get_track_identifier(self, track: mafic.Track) -> str:
+        """Obtém um identificador único para uma faixa."""
+        # Usa uma combinação de título, autor e duração como identificador
+        return f"{track.title}|{track.author}|{track.length}"
+        
     def get_loop_state(self, guild_id: int) -> str:
-        """Obtém o estado de loop para um servidor específico."""
+        """Obtém o estado de loop para um servidor."""
         return self.loop_states.get(guild_id, "none")
-    
+        
     def set_loop_state(self, guild_id: int, state: str):
-        """Define o estado de loop para um servidor específico."""
+        """Define o estado de loop para um servidor."""
         self.loop_states[guild_id] = state
         
     def get_autoplay_state(self, guild_id: int) -> bool:
-        """Obtém o estado de autoplay para um servidor específico."""
+        """Obtém o estado de autoplay para um servidor."""
         return self.autoplay_states.get(guild_id, False)
-    
+        
     def set_autoplay_state(self, guild_id: int, state: bool):
-        """Define o estado de autoplay para um servidor específico."""
+        """Define o estado de autoplay para um servidor."""
         self.autoplay_states[guild_id] = state
         
-    def get_player_volume(self, player):
-        """Obtém o volume do player de forma segura, com fallback para valor padrão."""
+    def get_player_volume(self, player: mafic.Player) -> int:
+        """Obtém o volume atual do player de forma segura."""
         try:
-            return getattr(player, "volume", 100)
-        except:
-            return 100
+            return player.volume
+        except (AttributeError, TypeError):
+            return 100  # Valor padrão
             
-    async def set_player_volume(self, player, volume):
+    async def set_player_volume(self, player: mafic.Player, volume: int):
         """Define o volume do player de forma segura."""
         try:
-            if hasattr(player, "set_volume"):
-                await player.set_volume(volume)
+            await player.set_volume(volume)
         except Exception as e:
-            logger.error(f"Erro ao definir volume: {e}")
-            # Silenciosamente falha se o método não existir
-    
-    async def get_player(self, interaction: Interaction) -> Optional[mafic.Player]:
-        """Obtém ou cria um player para o servidor."""
-        if not interaction.guild_id:
-            return None
-            
-        # Se já existe um player para este servidor, retorna-o
-        if interaction.guild_id in self.players:
-            return self.players[interaction.guild_id]
-            
-        # Verifica se o usuário está em um canal de voz
-        if not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.followup.send("Você precisa estar em um canal de voz para usar os comandos de música.", ephemeral=True)
-            return None
-            
-        voice_channel = interaction.user.voice.channel
-        
-        # Verifica permissões
-        permissions = voice_channel.permissions_for(interaction.guild.me)
-        if not permissions.connect or not permissions.speak:
-            await interaction.followup.send(f"Não tenho permissão para conectar ou falar no canal {voice_channel.mention}.", ephemeral=True)
-            return None
-            
-        try:
-            # Cria o player e conecta ao canal de voz
-            # Usando o método correto para a versão atual da Mafic
-            player = await voice_channel.connect(cls=mafic.Player)
-            
-            # Armazena o player para uso futuro
-            self.players[interaction.guild_id] = player
-            
-            # Reseta contadores de tentativas
-            self.reconnect_attempts[interaction.guild_id] = 0
-            
-            logger.info(f"Novo player criado e conectado para guild {interaction.guild_id} no canal {voice_channel.name}")
-            return player
-        except Exception as e:
-            logger.error(f"Erro ao criar player para guild {interaction.guild_id}: {e}", exc_info=True)
-            # Incrementa contador de tentativas
-            self.reconnect_attempts[interaction.guild_id] = self.reconnect_attempts.get(interaction.guild_id, 0) + 1
-            return None
-    
-    async def get_spotify_track(self, track_id: str) -> Optional[Dict[str, Any]]:
-        """Obtém informações de uma faixa do Spotify."""
-        if not self.spotify:
-            return None
-            
-        # Verifica o cache primeiro
-        cache_key = f"track:{track_id}"
-        cached_data = self.spotify_cache.get(cache_key)
-        if cached_data:
-            return cached_data
-            
-        try:
-            track_data = self.spotify.track(track_id)
-            self.spotify_cache.set(cache_key, track_data)
-            return track_data
-        except Exception as e:
-            logger.error(f"Erro ao obter faixa do Spotify: {e}")
-            return None
-            
-    async def get_spotify_album(self, album_id: str) -> Optional[Dict[str, Any]]:
-        """Obtém informações de um álbum do Spotify."""
-        if not self.spotify:
-            return None
-            
-        # Verifica o cache primeiro
-        cache_key = f"album:{album_id}"
-        cached_data = self.spotify_cache.get(cache_key)
-        if cached_data:
-            return cached_data
-            
-        try:
-            album_data = self.spotify.album(album_id)
-            self.spotify_cache.set(cache_key, album_data)
-            return album_data
-        except Exception as e:
-            logger.error(f"Erro ao obter álbum do Spotify: {e}")
-            return None
-            
-    async def get_spotify_playlist(self, playlist_id: str) -> Optional[Dict[str, Any]]:
-        """Obtém informações de uma playlist do Spotify."""
-        if not self.spotify:
-            return None
-            
-        # Verifica o cache primeiro
-        cache_key = f"playlist:{playlist_id}"
-        cached_data = self.spotify_cache.get(cache_key)
-        if cached_data:
-            return cached_data
-            
-        try:
-            playlist_data = self.spotify.playlist(playlist_id)
-            self.spotify_cache.set(cache_key, playlist_data)
-            return playlist_data
-        except Exception as e:
-            logger.error(f"Erro ao obter playlist do Spotify: {e}")
-            return None
-    
-    async def process_spotify_url(self, url: str, player: mafic.Player, interaction: Interaction) -> Optional[Union[mafic.Track, List[mafic.Track]]]:
-        """Processa uma URL do Spotify e retorna faixas do Lavalink."""
-        if not self.spotify:
-            await interaction.followup.send("⚠️ Integração com Spotify não está configurada. Configure as credenciais do Spotify para usar esta funcionalidade.", ephemeral=True)
-            return None
-            
-        # Extrai o tipo e ID da URL do Spotify
-        match = SPOTIFY_URL_REGEX.match(url)
-        if not match:
-            await interaction.followup.send("❌ URL do Spotify inválida.", ephemeral=True)
-            return None
-            
-        spotify_type = match.group(3)  # track, album ou playlist
-        spotify_id = match.group(4)
-        
-        if spotify_type == "track":
-            # Processa uma faixa única
-            await interaction.followup.send(f"{EMOJIS['spotify']} Buscando faixa do Spotify...", ephemeral=True)
-            track_data = await self.get_spotify_track(spotify_id)
-            
-            if not track_data:
-                await interaction.followup.send("❌ Não foi possível obter informações da faixa do Spotify.", ephemeral=True)
-                return None
-                
-            # Formata a consulta de busca para o YouTube
-            artist_name = track_data["artists"][0]["name"] if track_data["artists"] else ""
-            track_name = track_data["name"]
-            search_query = f"ytsearch:{artist_name} - {track_name} audio"
-            
-            try:
-                tracks = await player.fetch_tracks(search_query)
-                if not tracks:
-                    await interaction.followup.send(f"❌ Não foi possível encontrar a faixa do Spotify no YouTube: {artist_name} - {track_name}", ephemeral=True)
-                    return None
-                    
-                # Retorna a primeira faixa encontrada
-                return tracks[0]
-            except Exception as e:
-                logger.error(f"Erro ao buscar faixa do Spotify no YouTube: {e}")
-                await interaction.followup.send(f"❌ Erro ao buscar faixa do Spotify no YouTube: {e}", ephemeral=True)
-                return None
-                
-        elif spotify_type == "album":
-            # Processa um álbum
-            await interaction.followup.send(f"{EMOJIS['spotify']} Buscando álbum do Spotify...", ephemeral=True)
-            album_data = await self.get_spotify_album(spotify_id)
-            
-            if not album_data:
-                await interaction.followup.send("❌ Não foi possível obter informações do álbum do Spotify.", ephemeral=True)
-                return None
-                
-            # Obtém todas as faixas do álbum
-            tracks_data = album_data["tracks"]["items"]
-            
-            if not tracks_data:
-                await interaction.followup.send("❌ O álbum do Spotify não contém faixas.", ephemeral=True)
-                return None
-                
-            # Busca cada faixa no YouTube
-            result_tracks = []
-            
-            # Informa o usuário sobre o progresso
-            progress_msg = await interaction.followup.send(f"{EMOJIS['spotify']} Buscando {len(tracks_data)} faixas do álbum '{album_data['name']}' no YouTube...", ephemeral=True)
-            
-            for i, track_data in enumerate(tracks_data):
-                # Atualiza a mensagem de progresso a cada 5 faixas
-                if i % 5 == 0 and i > 0:
-                    try:
-                        await progress_msg.edit(content=f"{EMOJIS['spotify']} Buscando faixas do álbum '{album_data['name']}' no YouTube... ({i}/{len(tracks_data)})")
-                    except:
-                        pass
-                
-                artist_name = track_data["artists"][0]["name"] if track_data["artists"] else ""
-                track_name = track_data["name"]
-                search_query = f"ytsearch:{artist_name} - {track_name} audio"
-                
-                try:
-                    search_result = await player.fetch_tracks(search_query)
-                    if search_result:
-                        result_tracks.append(search_result[0])
-                except Exception as e:
-                    logger.error(f"Erro ao buscar faixa '{track_name}' do álbum no YouTube: {e}")
-                    # Continua para a próxima faixa
-                    continue
-                    
-            if not result_tracks:
-                await interaction.followup.send("❌ Não foi possível encontrar nenhuma faixa do álbum no YouTube.", ephemeral=True)
-                return None
-                
-            # Atualiza a mensagem final
-            try:
-                await progress_msg.edit(content=f"{EMOJIS['spotify']} Encontradas {len(result_tracks)}/{len(tracks_data)} faixas do álbum '{album_data['name']}' no YouTube.")
-            except:
-                pass
-                
-            return result_tracks
-            
-        elif spotify_type == "playlist":
-            # Processa uma playlist
-            await interaction.followup.send(f"{EMOJIS['spotify']} Buscando playlist do Spotify...", ephemeral=True)
-            playlist_data = await self.get_spotify_playlist(spotify_id)
-            
-            if not playlist_data:
-                await interaction.followup.send("❌ Não foi possível obter informações da playlist do Spotify.", ephemeral=True)
-                return None
-                
-            # Obtém todas as faixas da playlist
-            tracks_data = playlist_data["tracks"]["items"]
-            
-            if not tracks_data:
-                await interaction.followup.send("❌ A playlist do Spotify não contém faixas.", ephemeral=True)
-                return None
-                
-            # Busca cada faixa no YouTube
-            result_tracks = []
-            
-            # Informa o usuário sobre o progresso
-            progress_msg = await interaction.followup.send(f"{EMOJIS['spotify']} Buscando {len(tracks_data)} faixas da playlist '{playlist_data['name']}' no YouTube...", ephemeral=True)
-            
-            # Limita a 50 faixas para evitar sobrecarregar o Lavalink
-            max_tracks = min(50, len(tracks_data))
-            
-            for i, item in enumerate(tracks_data[:max_tracks]):
-                # Atualiza a mensagem de progresso a cada 5 faixas
-                if i % 5 == 0 and i > 0:
-                    try:
-                        await progress_msg.edit(content=f"{EMOJIS['spotify']} Buscando faixas da playlist '{playlist_data['name']}' no YouTube... ({i}/{max_tracks})")
-                    except:
-                        pass
-                
-                track_data = item["track"]
-                if not track_data:
-                    continue
-                    
-                artist_name = track_data["artists"][0]["name"] if track_data["artists"] else ""
-                track_name = track_data["name"]
-                search_query = f"ytsearch:{artist_name} - {track_name} audio"
-                
-                try:
-                    search_result = await player.fetch_tracks(search_query)
-                    if search_result:
-                        result_tracks.append(search_result[0])
-                except Exception as e:
-                    logger.error(f"Erro ao buscar faixa '{track_name}' da playlist no YouTube: {e}")
-                    # Continua para a próxima faixa
-                    continue
-                    
-            if not result_tracks:
-                await interaction.followup.send("❌ Não foi possível encontrar nenhuma faixa da playlist no YouTube.", ephemeral=True)
-                return None
-                
-            # Atualiza a mensagem final
-            try:
-                await progress_msg.edit(content=f"{EMOJIS['spotify']} Encontradas {len(result_tracks)}/{max_tracks} faixas da playlist '{playlist_data['name']}' no YouTube.")
-            except:
-                pass
-                
-            return result_tracks
-            
-        else:
-            await interaction.followup.send(f"❌ Tipo de URL do Spotify não suportado: {spotify_type}", ephemeral=True)
-            return None
-    
-    @nextcord.slash_command(name="tocar", description="Toca uma música ou playlist do YouTube/Spotify.")
+            logger.error(f"Erro ao definir volume para player: {e}")
+
+    @nextcord.slash_command(name="tocar", description="Toca uma música ou adiciona à fila.")
     async def play(
         self, 
         interaction: Interaction, 
-        busca: str = SlashOption(
-            name="musica_ou_url", 
-            description="Nome da música, URL do YouTube/SoundCloud ou URL do Spotify.", 
+        query: str = SlashOption(
+            name="musica", 
+            description="Nome da música, URL do YouTube ou URL do Spotify.", 
             required=True
         )
     ):
         """Comando para tocar música."""
-        # Primeiro, verificamos se o usuário está em um canal de voz
-        if not interaction.guild or not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("Você precisa estar em um canal de voz para usar os comandos de música.", ephemeral=True)
+        await interaction.response.defer()
+        
+        # Verifica se o usuário está em um canal de voz
+        if not interaction.user.voice:
+            await interaction.followup.send("Você precisa estar em um canal de voz para usar este comando.", ephemeral=True)
             return
-
-        # Deferimos a resposta para dar tempo de processar
-        await interaction.response.defer(ephemeral=False)
-
+            
+        voice_channel = interaction.user.voice.channel
+        
+        # Verifica se o bot tem permissão para entrar no canal de voz
+        permissions = voice_channel.permissions_for(interaction.guild.me)
+        if not permissions.connect or not permissions.speak:
+            await interaction.followup.send("Não tenho permissão para entrar ou falar no seu canal de voz.", ephemeral=True)
+            return
+            
+        # Verifica se a query é válida
+        if not query:
+            await interaction.followup.send("Por favor, forneça um termo de busca ou URL válido.", ephemeral=True)
+            return
+            
+        # Verifica se é um URL do Spotify
+        spotify_match = SPOTIFY_URL_REGEX.match(query)
+        if spotify_match and self.spotify:
+            # Processa URL do Spotify
+            await self.process_spotify_url(interaction, query)
+            return
+            
+        # Verifica se é um URL ou um termo de busca
+        if URL_REGEX.match(query):
+            search_query = query
+        elif SEARCH_TERM_REGEX.match(query):
+            search_query = f"ytsearch:{query}"
+        else:
+            await interaction.followup.send("Por favor, forneça um termo de busca ou URL válido.", ephemeral=True)
+            return
+            
+        # Obtém ou cria um player para este servidor
         try:
-            # Obtemos ou criamos o player
-            player = await self.get_player(interaction)
-            
-            if not player:
-                await interaction.followup.send("Não foi possível conectar ao canal de voz. Verifique se o bot tem permissão ou tente novamente mais tarde.", ephemeral=True)
-                return
-
-            # Verifica se é uma URL do Spotify
-            is_spotify = bool(SPOTIFY_URL_REGEX.match(busca))
-            
-            # Verifica se é uma URL válida ou um termo de busca
-            is_url = bool(URL_REGEX.match(busca))
-            is_search_term = bool(SEARCH_TERM_REGEX.match(busca)) and not is_url
-
-            tracks: Union[mafic.Playlist, List[mafic.Track], mafic.Track, None] = None
-
-            if is_spotify:
-                logger.info(f"Buscando URL do Spotify: {busca} para guild {interaction.guild_id}")
-                tracks = await self.process_spotify_url(busca, player, interaction)
+            # Verifica se já existe um player para este servidor
+            if interaction.guild_id in self.players:
+                player = self.players[interaction.guild_id]
                 
-                if not tracks:
-                    # O método process_spotify_url já envia mensagens de erro
-                    return
-                    
-            elif is_url:
-                logger.info(f"Buscando por URL: {busca} para guild {interaction.guild_id}")
-                
-                try:
-                    tracks = await player.fetch_tracks(busca)  # Deixa Mafic decidir a fonte pela URL
-                except mafic.errors.HTTPNotFound as e:
-                    logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
-                    await interaction.followup.send("❌ Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
-                    return
-                except Exception as e:
-                    logger.error(f"Erro ao buscar faixas por URL: {e}")
-                    await interaction.followup.send(f"❌ Erro ao buscar música: {e}\n\nSe você está tentando usar um serviço não suportado, tente buscar a música diretamente pelo nome ou use um link do YouTube/SoundCloud.", ephemeral=True)
-                    return
-            elif is_search_term:
-                logger.info(f"Buscando por termo: {busca} para guild {interaction.guild_id}")
-                # Para termos de busca, tentamos várias abordagens
-                try:
-                    # Tentativa 1: ytsearch:
-                    search_query = f"ytsearch:{busca}"
-                    tracks = await player.fetch_tracks(search_query)
-                    
-                    # Se não encontrou nada, tenta outras abordagens
-                    if not tracks:
-                        # Tentativa 2: scsearch:
-                        search_query = f"scsearch:{busca}"
-                        tracks = await player.fetch_tracks(search_query)
-                        
-                    # Se ainda não encontrou, tenta uma busca direta no YouTube
-                    if not tracks:
-                        # Tentativa 3: URL direta do YouTube com o termo
-                        search_query = f"https://www.youtube.com/results?search_query={busca.replace(' ', '+')}"
-                        tracks = await player.fetch_tracks(search_query)
-                        
-                    # Se todas as tentativas falharam, informa ao usuário
-                    if not tracks:
-                        await interaction.followup.send(
-                            "❌ Não foi possível encontrar resultados para sua busca. Tente usar termos mais específicos ou um link direto do YouTube ou SoundCloud.", 
-                            ephemeral=True
-                        )
-                        return
-                        
-                except mafic.errors.HTTPNotFound as e:
-                    logger.error(f"Erro HTTP 404 ao buscar faixas: {e}")
-                    await interaction.followup.send(
-                        "❌ O servidor de música não conseguiu processar sua busca. Tente usar termos mais simples ou um link direto do YouTube ou SoundCloud.", 
-                        ephemeral=True
-                    )
-                    return
-                except Exception as e:
-                    logger.error(f"Erro ao buscar faixas por termo: {e}")
-                    # Verifica se é um erro de formato desconhecido
-                    if "Unknown file format" in str(e):
-                        await interaction.followup.send(
-                            "❌ Formato de arquivo desconhecido. O termo de busca pode conter caracteres especiais ou palavras que confundem o sistema de busca.\n\nTente usar termos mais simples ou específicos, como o nome da música e do artista.", 
-                            ephemeral=True
-                        )
-                    else:
-                        await interaction.followup.send(
-                            f"❌ Erro ao buscar música: {e}\n\nTente usar termos mais simples ou um link direto do YouTube ou SoundCloud.", 
-                            ephemeral=True
-                        )
-                    return
+                # Se o player não estiver conectado, conecta ao canal de voz
+                if not player.connected:
+                    await player.connect(voice_channel.id)
             else:
-                await interaction.followup.send("Entrada inválida. Por favor, forneça uma URL válida (YouTube/SoundCloud/Spotify) ou um termo de busca (3-500 caracteres).", ephemeral=True)
-                return
-
-            if not tracks:
-                await interaction.followup.send(f"Nenhuma música encontrada para: `{busca}`", ephemeral=True)
-                return
-
-            added_to_queue_count = 0
-            first_track_title = ""
+                # Cria um novo player e conecta ao canal de voz
+                player = await self.bot.mafic_pool.create_player(interaction.guild_id, voice_channel.id)
+                self.players[interaction.guild_id] = player
+                
+                # Define o volume padrão
+                await self.set_player_volume(player, 70)
+                
+            logger.info(f"Player conectado ao canal de voz {voice_channel.name} em {interaction.guild.name}")
+        except Exception as e:
+            logger.error(f"Erro ao conectar ao canal de voz: {e}", exc_info=True)
+            await interaction.followup.send(f"Erro ao conectar ao canal de voz: {e}", ephemeral=True)
+            return
             
+        # Busca a música
+        try:
+            tracks = await player.fetch_tracks(search_query)
+            
+            if not tracks:
+                await interaction.followup.send("Nenhuma música encontrada com esse termo de busca ou URL.", ephemeral=True)
+                return
+                
             # Obtém a fila personalizada para este servidor
             queue = self.get_queue(interaction.guild_id)
 
             # Cria o painel estilizado ANTES de adicionar à fila
-            # Isso garante que o painel sempre apareça, independente do estado do player
             if player.current:
                 # Se já está tocando algo, atualizamos o painel existente
                 await self.update_now_playing_message(player)
             else:
                 # Se não está tocando nada, criamos um painel inicial com a primeira música que será adicionada
-                # Sem tentar modificar player.current que é somente leitura
-                if isinstance(tracks, mafic.Playlist) and tracks.tracks:
-                    temp_track = tracks.tracks[0]
-                    self.set_requester(interaction.guild_id, temp_track, interaction.user)
-                    # Criamos o painel diretamente com a faixa temporária
-                    await self.create_now_playing_panel_for_track(interaction.channel, player, temp_track)
-                elif isinstance(tracks, list) and tracks:
+                if isinstance(tracks, list) and tracks:
                     temp_track = tracks[0]
                     self.set_requester(interaction.guild_id, temp_track, interaction.user)
-                    # Criamos o painel diretamente com a faixa temporária
                     await self.create_now_playing_panel_for_track(interaction.channel, player, temp_track)
                 elif isinstance(tracks, mafic.Track):
                     temp_track = tracks
                     self.set_requester(interaction.guild_id, temp_track, interaction.user)
-                    # Criamos o painel diretamente com a faixa temporária
                     await self.create_now_playing_panel_for_track(interaction.channel, player, temp_track)
             
-            # Adiciona o requester às faixas usando nosso sistema de armazenamento separado
-            if isinstance(tracks, mafic.Playlist):
-                for track in tracks.tracks:
-                    # Armazena o requester para cada faixa
+            # Adiciona as faixas à fila
+            added_to_queue_count = 0
+            
+            if isinstance(tracks, list):
+                # Se for uma playlist, adiciona todas as faixas à fila
+                for track in tracks:
                     self.set_requester(interaction.guild_id, track, interaction.user)
-                queue.extend(tracks.tracks)
-                added_to_queue_count = len(tracks.tracks)
-                first_track_title = tracks.name # Nome da playlist
+                queue.extend(tracks)
+                added_to_queue_count = len(tracks)
                 
                 # Envia mensagem de confirmação
-                confirm_msg = await interaction.followup.send(f"🎶 Playlist **{tracks.name}** ({added_to_queue_count} músicas) adicionada à fila!")
-                
-            elif isinstance(tracks, list) and tracks: # Lista de faixas (resultado de busca ou Spotify)
-                if is_search_term and not is_spotify: # Se foi uma busca normal, geralmente pegamos a primeira e adicionamos
-                    track_to_add = tracks[0]
-                    # Armazena o requester para a faixa
-                    self.set_requester(interaction.guild_id, track_to_add, interaction.user)
-                    queue.append(track_to_add)
-                    added_to_queue_count = 1
-                    first_track_title = track_to_add.title
-                    
-                    # Envia mensagem de confirmação
-                    confirm_msg = await interaction.followup.send(f"🎵 **{track_to_add.title}** adicionada à fila!")
-                    
-                else: # Se foi uma URL de faixa única que retornou uma lista ou resultado do Spotify
-                    for track in tracks:
-                        # Armazena o requester para cada faixa
-                        self.set_requester(interaction.guild_id, track, interaction.user)
-                    queue.extend(tracks)
-                    added_to_queue_count = len(tracks)
-                    first_track_title = tracks[0].title
-                    
-                    # Envia mensagem de confirmação
-                    if is_spotify:
-                        confirm_msg = await interaction.followup.send(f"{EMOJIS['spotify']} **{added_to_queue_count} música(s)** do Spotify adicionada(s) à fila!")
-                    else:
-                        confirm_msg = await interaction.followup.send(f"🎵 **{tracks[0].title}** ({added_to_queue_count} música(s)) adicionada(s) à fila!")
-            
-            elif isinstance(tracks, mafic.Track): # Faixa única
-                # Armazena o requester para a faixa
+                await interaction.followup.send(f"{EMOJIS['playlist']} **{added_to_queue_count} música(s)** adicionada(s) à fila!")
+            else:
+                # Se for uma única faixa, adiciona à fila
                 self.set_requester(interaction.guild_id, tracks, interaction.user)
                 queue.append(tracks)
                 added_to_queue_count = 1
-                first_track_title = tracks.title
                 
                 # Envia mensagem de confirmação
-                confirm_msg = await interaction.followup.send(f"🎵 **{tracks.title}** adicionada à fila!")
-                
-            else:
-                await interaction.followup.send(f"Não foi possível processar o resultado para: `{busca}`", ephemeral=True)
-                return
+                await interaction.followup.send(f"{EMOJIS['music']} **{tracks.title}** adicionada à fila!")
 
             if not player.current and queue:
                 # Inicia a primeira música da fila
@@ -936,69 +629,135 @@ class Musica(commands.Cog):
                     first_track = queue.pop(0)
                     await player.play(first_track, start_time=0)
                     logger.info(f"Iniciando reprodução de {first_track.title} para guild {interaction.guild_id}")
-                except mafic.errors.HTTPNotFound as e:
-                    logger.error(f"Erro HTTP 404 ao iniciar reprodução: {e}")
-                    await interaction.followup.send("Erro ao conectar ao servidor de música. Tente novamente mais tarde.", ephemeral=True)
-                    return
                 except Exception as e:
                     logger.error(f"Erro ao iniciar reprodução: {e}")
                     await interaction.followup.send(f"Erro ao iniciar reprodução: {e}", ephemeral=True)
                     return
             elif player.current and added_to_queue_count > 0:
-                # Se já está tocando e algo foi adicionado, a mensagem de "agora tocando" pode ser atualizada
-                # para refletir a fila, se a view estiver ativa.
+                # Se já está tocando e algo foi adicionado, atualiza a mensagem de "agora tocando"
                 await self.update_now_playing_message(player)
-        except nextcord.errors.InteractionResponded:
-            logger.warning("Interação já respondida durante o comando /tocar")
         except Exception as e:
             logger.error(f"Erro inesperado no comando /tocar: {e}", exc_info=True)
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(f"Ocorreu um erro inesperado: {e}", ephemeral=True)
-                else:
-                    await interaction.followup.send(f"Ocorreu um erro inesperado: {e}", ephemeral=True)
+                await interaction.followup.send(f"Ocorreu um erro inesperado: {e}", ephemeral=True)
             except:
                 pass
 
-    @nextcord.slash_command(name="spotify", description="Toca uma música, álbum ou playlist do Spotify.")
-    async def spotify(
-        self, 
-        interaction: Interaction, 
-        url: str = SlashOption(
-            name="url", 
-            description="URL do Spotify (faixa, álbum ou playlist).", 
-            required=True
-        )
-    ):
-        """Comando específico para tocar música do Spotify."""
-        # Primeiro, verificamos se o usuário está em um canal de voz
-        if not interaction.guild or not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("Você precisa estar em um canal de voz para usar os comandos de música.", ephemeral=True)
+    async def process_spotify_url(self, interaction: Interaction, url: str):
+        """Processa URLs do Spotify."""
+        if not self.spotify:
+            await interaction.followup.send("Integração com Spotify não está configurada. Use `/configurar_spotify` para configurar.", ephemeral=True)
             return
-
-        # Verifica se é uma URL do Spotify
-        if not SPOTIFY_URL_REGEX.match(url):
-            await interaction.response.send_message("❌ URL do Spotify inválida. Forneça uma URL de faixa, álbum ou playlist do Spotify.", ephemeral=True)
-            return
-
-        # Deferimos a resposta para dar tempo de processar
-        await interaction.response.defer(ephemeral=False)
-
+            
+        await interaction.followup.send(f"{EMOJIS['spotify']} Processando link do Spotify... Isso pode levar alguns segundos.", ephemeral=True)
+        
         try:
-            # Obtemos ou criamos o player
-            player = await self.get_player(interaction)
-            
-            if not player:
-                await interaction.followup.send("Não foi possível conectar ao canal de voz. Verifique se o bot tem permissão ou tente novamente mais tarde.", ephemeral=True)
-                return
-
-            # Processa a URL do Spotify
-            tracks = await self.process_spotify_url(url, player, interaction)
-            
+            # Verifica se a URL está no cache
+            cached_tracks = self.spotify_cache.get(url)
+            if cached_tracks:
+                logger.info(f"Usando resultados em cache para URL do Spotify: {url}")
+                tracks = cached_tracks
+            else:
+                # Extrai o tipo e ID da URL
+                match = SPOTIFY_URL_REGEX.match(url)
+                if not match:
+                    await interaction.followup.send("URL do Spotify inválida.", ephemeral=True)
+                    return
+                    
+                spotify_type = match.group(3)  # track, album ou playlist
+                spotify_id = match.group(4)
+                
+                # Processa de acordo com o tipo
+                if spotify_type == "track":
+                    # Busca informações da faixa
+                    track_info = self.spotify.track(spotify_id)
+                    
+                    # Formata a query para busca no YouTube
+                    artist_name = track_info["artists"][0]["name"]
+                    track_name = track_info["name"]
+                    search_query = f"ytsearch:{artist_name} - {track_name}"
+                    
+                    # Obtém ou cria um player para este servidor
+                    player = await self.get_or_create_player(interaction)
+                    if not player:
+                        return
+                        
+                    # Busca a música no YouTube
+                    tracks = await player.fetch_tracks(search_query)
+                    
+                    if not tracks:
+                        await interaction.followup.send(f"Não foi possível encontrar a música: {artist_name} - {track_name}", ephemeral=True)
+                        return
+                        
+                    # Pega apenas a primeira faixa
+                    if isinstance(tracks, list):
+                        tracks = tracks[0]
+                elif spotify_type == "album":
+                    # Busca informações do álbum
+                    album_info = self.spotify.album(spotify_id)
+                    
+                    # Obtém ou cria um player para este servidor
+                    player = await self.get_or_create_player(interaction)
+                    if not player:
+                        return
+                        
+                    # Processa cada faixa do álbum
+                    tracks = []
+                    for item in album_info["tracks"]["items"]:
+                        artist_name = item["artists"][0]["name"]
+                        track_name = item["name"]
+                        search_query = f"ytsearch:{artist_name} - {track_name}"
+                        
+                        # Busca a música no YouTube
+                        result = await player.fetch_tracks(search_query)
+                        
+                        if result and isinstance(result, list) and result:
+                            tracks.append(result[0])
+                        elif result:
+                            tracks.append(result)
+                elif spotify_type == "playlist":
+                    # Busca informações da playlist
+                    playlist_info = self.spotify.playlist(spotify_id)
+                    
+                    # Obtém ou cria um player para este servidor
+                    player = await self.get_or_create_player(interaction)
+                    if not player:
+                        return
+                        
+                    # Processa cada faixa da playlist
+                    tracks = []
+                    for item in playlist_info["tracks"]["items"]:
+                        track = item["track"]
+                        if not track:
+                            continue
+                            
+                        artist_name = track["artists"][0]["name"] if track["artists"] else "Unknown"
+                        track_name = track["name"]
+                        search_query = f"ytsearch:{artist_name} - {track_name}"
+                        
+                        # Busca a música no YouTube
+                        result = await player.fetch_tracks(search_query)
+                        
+                        if result and isinstance(result, list) and result:
+                            tracks.append(result[0])
+                        elif result:
+                            tracks.append(result)
+                else:
+                    await interaction.followup.send("Tipo de URL do Spotify não suportado.", ephemeral=True)
+                    return
+                    
+                # Armazena os resultados no cache
+                self.spotify_cache.set(url, tracks)
+                
             if not tracks:
-                # O método process_spotify_url já envia mensagens de erro
+                await interaction.followup.send("Nenhuma música encontrada para este link do Spotify.", ephemeral=True)
                 return
-
+                
+            # Obtém ou cria um player para este servidor
+            player = await self.get_or_create_player(interaction)
+            if not player:
+                return
+                
             # Obtém a fila personalizada para este servidor
             queue = self.get_queue(interaction.guild_id)
 
@@ -1372,12 +1131,16 @@ class Musica(commands.Cog):
             return
 
         player = self.players[interaction.guild_id]
-        if not player.connected or not player.current:
+        if not player.connected:
+            await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
+            return
+            
+        if not player.current:
             await interaction.response.send_message("Não há música tocando no momento.", ephemeral=True)
             return
             
         if player.paused:
-            await interaction.response.send_message("A música já está pausada. Use `/retomar` para continuar a reprodução.", ephemeral=True)
+            await interaction.response.send_message("A música já está pausada. Use `/retomar` para continuar.", ephemeral=True)
             return
             
         await player.pause()
@@ -1394,12 +1157,16 @@ class Musica(commands.Cog):
             return
 
         player = self.players[interaction.guild_id]
-        if not player.connected or not player.current:
+        if not player.connected:
+            await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
+            return
+            
+        if not player.current:
             await interaction.response.send_message("Não há música tocando no momento.", ephemeral=True)
             return
             
         if not player.paused:
-            await interaction.response.send_message("A música já está tocando. Use `/pausar` para pausar a reprodução.", ephemeral=True)
+            await interaction.response.send_message("A música já está tocando.", ephemeral=True)
             return
             
         await player.resume()
@@ -1416,60 +1183,30 @@ class Musica(commands.Cog):
             return
 
         player = self.players[interaction.guild_id]
-        if not player.connected or not player.current:
-            await interaction.response.send_message("Não há música tocando no momento.", ephemeral=True)
-            return
-            
-        # Armazena a música atual como última tocada antes de pular
-        if player.current:
-            self.last_tracks[interaction.guild_id] = player.current
-            
-        await player.stop()  # Mafic lida com a próxima música da fila automaticamente
-        await interaction.response.send_message(f"{EMOJIS['skip']} Música pulada!")
-
-    @nextcord.slash_command(name="voltar", description="Volta para a música anterior.")
-    async def back(self, interaction: Interaction):
-        """Comando para voltar para a música anterior."""
-        if not interaction.guild_id or interaction.guild_id not in self.players:
-            await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
-            return
-
-        player = self.players[interaction.guild_id]
         if not player.connected:
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
             
-        last_track = self.last_tracks.get(interaction.guild_id)
-        
-        if last_track:
-            # Adiciona a música atual de volta à fila (no início)
-            if player.current:
-                queue = self.get_queue(interaction.guild_id)
-                queue.insert(0, player.current)
-                
-            # Toca a última música
-            try:
-                await player.play(last_track)
-                await interaction.response.send_message(f"{EMOJIS['back']} Voltando para a música anterior: **{last_track.title}**")
-            except Exception as e:
-                logger.error(f"Erro ao voltar para música anterior: {e}")
-                await interaction.response.send_message(f"Erro ao voltar para música anterior: {e}", ephemeral=True)
-        else:
-            await interaction.response.send_message("Não há música anterior para voltar.", ephemeral=True)
+        if not player.current:
+            await interaction.response.send_message("Não há música tocando no momento.", ephemeral=True)
+            return
+            
+        await player.stop()  # Mafic lida com a próxima música da fila automaticamente
+        await interaction.response.send_message(f"{EMOJIS['skip']} Música pulada!")
 
-    @nextcord.slash_command(name="volume", description="Ajusta o volume da reprodução.")
+    @nextcord.slash_command(name="volume", description="Ajusta o volume da música.")
     async def volume(
         self, 
         interaction: Interaction, 
-        nivel: int = SlashOption(
-            name="nivel", 
-            description="Nível de volume (0-100).", 
+        volume: int = SlashOption(
+            name="volume", 
+            description="Volume (0-100).", 
             required=True,
             min_value=0,
             max_value=100
         )
     ):
-        """Comando para ajustar o volume da reprodução."""
+        """Comando para ajustar o volume da música."""
         if not interaction.guild_id or interaction.guild_id not in self.players:
             await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
             return
@@ -1479,19 +1216,22 @@ class Musica(commands.Cog):
             await interaction.response.send_message("O player de música não está conectado a um canal de voz.", ephemeral=True)
             return
             
-        # Define o volume
-        await self.set_player_volume(player, nivel)
+        await self.set_player_volume(player, volume)
         
-        # Determina o emoji com base no nível de volume
-        emoji = EMOJIS["volume_down"] if nivel <= 50 else EMOJIS["volume_up"]
-        
-        await interaction.response.send_message(f"{emoji} Volume ajustado para {nivel}%!")
-        
+        if volume == 0:
+            await interaction.response.send_message(f"{EMOJIS['volume_down']} Volume definido para {volume}% (mudo).")
+        elif volume <= 30:
+            await interaction.response.send_message(f"{EMOJIS['volume_down']} Volume definido para {volume}% (baixo).")
+        elif volume <= 70:
+            await interaction.response.send_message(f"{EMOJIS['volume_down']} Volume definido para {volume}% (médio).")
+        else:
+            await interaction.response.send_message(f"{EMOJIS['volume_up']} Volume definido para {volume}% (alto).")
+            
         # Atualiza a mensagem de "agora tocando"
         await self.update_now_playing_message(player)
 
     @nextcord.slash_command(name="loop", description="Alterna entre os modos de loop (desativado, faixa, fila).")
-    async def loop_command(self, interaction: Interaction):
+    async def loop(self, interaction: Interaction):
         """Comando para alternar entre os modos de loop."""
         if not interaction.guild_id or interaction.guild_id not in self.players:
             await interaction.response.send_message("Não há player de música ativo neste servidor.", ephemeral=True)
@@ -1765,24 +1505,20 @@ class Musica(commands.Cog):
         guild_id = player.guild.id
         logger.info(f"Faixa iniciada: {track.title} em {player.guild.name} ({guild_id})")
         
+        # Encontra o canal para enviar a mensagem
+        channel = None
+        if guild_id in self.now_playing_messages:
+            msg_id, channel_id = self.now_playing_messages[guild_id]
+            channel = self.bot.get_channel(channel_id)
+        
+        if channel:
+            try:
+                # Envia mensagem de início de música
+                await channel.send(f"🎵 **Música insana** começou: **{track.title}**")
+            except Exception as e:
+                logger.error(f"Erro ao enviar mensagem de início de música para guild {guild_id}: {e}")
+        
         # Armazena a última música tocada para referência
-        last_track = self.last_tracks.get(guild_id)
-        
-        # Envia mensagem de confirmação de início de música
-        if last_track:
-            # Encontra o canal para enviar a mensagem
-            channel = None
-            if guild_id in self.now_playing_messages:
-                msg_id, channel_id = self.now_playing_messages[guild_id]
-                channel = self.bot.get_channel(channel_id)
-            
-            if channel:
-                try:
-                    await channel.send(f"🎵 Música **{last_track.title}** acabou, música **{track.title}** começou!")
-                except Exception as e:
-                    logger.error(f"Erro ao enviar mensagem de confirmação para guild {guild_id}: {e}")
-        
-        # Atualiza a última música tocada
         self.last_tracks[guild_id] = track
 
         # Cria ou atualiza a mensagem de "agora tocando"
@@ -1835,6 +1571,19 @@ class Musica(commands.Cog):
             
         guild_id = player.guild.id
         logger.info(f"Faixa terminada: {track.title} em {player.guild.name} ({guild_id}) - Razão: {reason}")
+        
+        # Encontra o canal para enviar a mensagem
+        channel = None
+        if guild_id in self.now_playing_messages:
+            msg_id, channel_id = self.now_playing_messages[guild_id]
+            channel = self.bot.get_channel(channel_id)
+        
+        if channel:
+            try:
+                # Envia mensagem de fim de música
+                await channel.send(f"🎵 Música **{track.title}** acabou!")
+            except Exception as e:
+                logger.error(f"Erro ao enviar mensagem de fim de música para guild {guild_id}: {e}")
         
         # Verifica se há mais músicas na fila
         queue = self.get_queue(guild_id)
@@ -2029,6 +1778,44 @@ class Musica(commands.Cog):
                     
                     # Limpa a referência da mensagem
                     del self.now_playing_messages[guild_id]
+
+    async def get_or_create_player(self, interaction: Interaction) -> Optional[mafic.Player]:
+        """Obtém ou cria um player para o servidor."""
+        # Verifica se o usuário está em um canal de voz
+        if not interaction.user.voice:
+            await interaction.followup.send("Você precisa estar em um canal de voz para usar este comando.", ephemeral=True)
+            return None
+            
+        voice_channel = interaction.user.voice.channel
+        
+        # Verifica se o bot tem permissão para entrar no canal de voz
+        permissions = voice_channel.permissions_for(interaction.guild.me)
+        if not permissions.connect or not permissions.speak:
+            await interaction.followup.send("Não tenho permissão para entrar ou falar no seu canal de voz.", ephemeral=True)
+            return None
+            
+        try:
+            # Verifica se já existe um player para este servidor
+            if interaction.guild_id in self.players:
+                player = self.players[interaction.guild_id]
+                
+                # Se o player não estiver conectado, conecta ao canal de voz
+                if not player.connected:
+                    await player.connect(voice_channel.id)
+            else:
+                # Cria um novo player e conecta ao canal de voz
+                player = await self.bot.mafic_pool.create_player(interaction.guild_id, voice_channel.id)
+                self.players[interaction.guild_id] = player
+                
+                # Define o volume padrão
+                await self.set_player_volume(player, 70)
+                
+            logger.info(f"Player conectado ao canal de voz {voice_channel.name} em {interaction.guild.name}")
+            return player
+        except Exception as e:
+            logger.error(f"Erro ao conectar ao canal de voz: {e}", exc_info=True)
+            await interaction.followup.send(f"Erro ao conectar ao canal de voz: {e}", ephemeral=True)
+            return None
 
 def setup(bot: commands.Bot):
     bot.add_cog(Musica(bot))
