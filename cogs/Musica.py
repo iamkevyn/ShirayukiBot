@@ -541,7 +541,9 @@ class Musica(commands.Cog):
                     await player.connect(voice_channel.id)
             else:
                 # Cria um novo player e conecta ao canal de voz
-                player = await self.bot.mafic_pool.create_player(interaction.guild_id, voice_channel.id)
+                # Usando create_session em vez de create_player para compatibilidade com versões mais recentes do Mafic
+                node = self.bot.mafic_pool.get_node("MAIN")
+                player = await node.create_session(interaction.guild_id, voice_channel.id)
                 self.players[interaction.guild_id] = player
                 
                 # Define o volume padrão
@@ -1781,7 +1783,9 @@ class Musica(commands.Cog):
                     await player.connect(voice_channel.id)
             else:
                 # Cria um novo player e conecta ao canal de voz
-                player = await self.bot.mafic_pool.create_player(interaction.guild_id, voice_channel.id)
+                # Usando create_session em vez de create_player para compatibilidade com versões mais recentes do Mafic
+                node = self.bot.mafic_pool.get_node("MAIN")
+                player = await node.create_session(interaction.guild_id, voice_channel.id)
                 self.players[interaction.guild_id] = player
                 
                 # Define o volume padrão
