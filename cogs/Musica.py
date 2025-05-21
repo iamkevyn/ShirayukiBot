@@ -406,46 +406,23 @@ class Musica(commands.Cog):
         await self.bot.wait_until_ready()
         
         try:
-            # Cria o pool do Mafic
+            # Cria o pool do Mafic com os nós do Lavalink
+            # Você pode adicionar mais nós conforme necessário
             self.bot.mafic_pool = mafic.NodePool(self.bot)
             
             # Adiciona o nó do Lavalink
-            # Tenta obter as credenciais do ambiente
-            host = os.getenv("LAVALINK_HOST", "localhost")
-            port = int(os.getenv("LAVALINK_PORT", "2333"))
-            password = os.getenv("LAVALINK_PASSWORD", "youshallnotpass")
-            secure = os.getenv("LAVALINK_SECURE", "false").lower() == "true"
-            
-            # Se não encontrar no ambiente, tenta carregar de um arquivo de configuração
-            if host == "localhost" and port == 2333 and password == "youshallnotpass":
-                config_dir = os.path.dirname(os.path.dirname(__file__))
-                config_path = os.path.join(config_dir, "config.json")
-                
-                if os.path.exists(config_path):
-                    try:
-                        with open(config_path, "r") as f:
-                            config = json.load(f)
-                            
-                        if "lavalink" in config:
-                            host = config["lavalink"].get("host", host)
-                            port = int(config["lavalink"].get("port", port))
-                            password = config["lavalink"].get("password", password)
-                            secure = config["lavalink"].get("secure", secure)
-                    except Exception as e:
-                        logger.error(f"Erro ao carregar configuração do Lavalink: {e}")
-            
-            # Adiciona o nó ao pool
+            # Substitua host, port, password pelos valores corretos do seu servidor Lavalink
             await self.bot.mafic_pool.create_node(
-                host=host,
-                port=port,
-                label="default-node",
-                password=password,
-                secure=secure
+                host="127.0.0.1",
+                port=2333,
+                label="MAIN",
+                password="youshallnotpass",
+                secure=False
             )
             
-            logger.info(f"Nó do Lavalink adicionado com sucesso! Host: {host}, Port: {port}")
+            logger.info("Pool Mafic inicializado com sucesso.")
         except Exception as e:
-            logger.error(f"Erro ao inicializar pool do Mafic: {e}", exc_info=True)
+            logger.error(f"Erro ao inicializar o pool Mafic: {e}", exc_info=True)
             
     def get_queue(self, guild_id: int) -> List[mafic.Track]:
         """Obtém a fila personalizada para um servidor."""
