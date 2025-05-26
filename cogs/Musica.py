@@ -6,8 +6,8 @@ import datetime
 import logging
 import re
 import time
-import os
-import json
+import os # Usado para getenv
+import random # Movido para o topo
 from typing import Dict, List, Optional, Union, Any
 from urllib.parse import urlparse, parse_qs
 
@@ -15,8 +15,10 @@ import mafic
 import nextcord
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-from nextcord import Interaction, SlashOption
+from nextcord import Interaction, SlashOption, HTTPException, NotFound, Forbidden # Adicionado HTTPException, NotFound, Forbidden
 from nextcord.ext import commands
+
+# TODO: Verificar se todas as dependências (mafic, nextcord, spotipy) estão no requirements.txt/pyproject.toml com versões compatíveis.
 
 # Configuração de logging
 logger = logging.getLogger("discord_bot.musica_mafic")
@@ -45,10 +47,25 @@ EMOJIS = {
 
 # Classe para cache de resultados do Spotify
 class SpotifyCache:
-    def __init__(self, max_size=100, expiry_time=3600):  # Cache por 1 hora
-        self.cache = {}
-        self.max_size = max_size
-        self.expiry_time = expiry_time
+    # TODO: Considerar usar bibliotecas de cache mais robustas como `cachetools` se necessário.
+    def __init__(self):
+        # Carrega configurações do cache do ambiente ou usa padrões
+        try:
+            # Tenta obter max_size do ambiente, default 100
+            self.max_size = int(os.getenv("SPOTIFY_CACHE_MAX_SIZE", "100")) 
+        except ValueError:
+            logger.warning("Valor inválido para SPOTIFY_CACHE_MAX_SIZE, usando padrão 100.")
+            self.max_size = 100
+            
+        try:
+             # Tenta obter expiry_time do ambiente (em segundos), default 3600 (1 hora)
+            self.expiry_time = int(os.getenv("SPOTIFY_CACHE_EXPIRY_TIME", "3600"))
+        except ValueError:
+            logger.warning("Valor inválido para SPOTIFY_CACHE_EXPIRY_TIME, usando padrão 3600.")
+            self.expiry_time = 3600
+            
+        self.cache: Dict[str, Dict[str, Any]] = {}
+        logger.info(f"SpotifyCache inicializado com max_size={self.max_size}, expiry_time={self.expiry_time}s")
         
     def get(self, key):
         if key in self.cache:
@@ -91,27 +108,40 @@ class MusicControls(nextcord.ui.View):
             await interaction.response.send_message("Volume já está no mínimo.", ephemeral=True)
     
     @nextcord.ui.button(emoji=EMOJIS["back"], style=nextcord.ButtonStyle.secondary, row=0)
-    async def back(self, button: nextcord.ui.Button, interaction: Interaction):
-        """Volta para a música anterior."""
+    async def back(self, button: nextcord.ui.Button, interaction: Interaction)        """Volta para a música anterior (se houver histórico)."""
         guild_id = interaction.guild_id
         last_track = self.cog.last_tracks.get(guild_id)
         
         if last_track:
-            # Adiciona a música atual de volta à fila (no início)
-            if self.player.current:
-                queue = self.cog.get_queue(guild_id)
-                queue.insert(0, self.player.current)
-                
-            # Toca a última música
+            # Toca a última música diretamente, sem modificar a fila principal
+            # Nota: O comportamento anterior adicionava a música atual de volta à fila.
+            # Se desejar esse comportamento, descomente as linhas abaixo e ajuste a lógica.
+            # if self.player.current:
+            #     queue = self.cog.get_queue(guild_id)
+            #     queue.insert(0, self.player.current)
+            
             try:
-                await self.player.play(last_track)
-                await interaction.response.send_message(f"{EMOJIS['back']} Voltando para a música anterior: **{last_track.title}**", ephemeral=True)
+                # Para tocar a anterior, precisamos parar a atual e então tocar a anterior.
+                # Mafic pode não ter um método direto para "play previous".
+                # Uma abordagem é parar a atual e confiar que o on_track_end/start lidará com isso,
+                # mas isso pode ser complexo. Tocar diretamente é mais simples.
+                # Guardamos a faixa atual para potencialmente restaurar se necessário, mas por simplicidade, apenas tocamos a anterior.
+                
+                # Limpa a flag de 'current' temporariamente para evitar conflitos no on_track_end?
+                # await self.player.stop() # Parar pode avançar a fila, não queremos isso.
+                
+                # Tenta tocar a faixa anterior diretamente
+                await self.player.play(last_track, replace=True) # Usa replace=True para substituir a atual
+                await interaction.response.send_message(f"{EMOJIS['back']} Voltando para: **{last_track.title}**", ephemeral=True)
+                # A mensagem 'agora tocando' será atualizada pelo on_track_start
+            except mafic.errors.MaficException as e:
+                logger.error(f"Erro específico do Mafic ao voltar para música anterior: {e}", exc_info=True)
+                await interaction.response.send_message(f"Erro ao voltar para música anterior (Mafic): {e}", ephemeral=True)
             except Exception as e:
-                logger.error(f"Erro ao voltar para música anterior: {e}")
+                logger.error(f"Erro geral ao voltar para música anterior: {e}", exc_info=True)
                 await interaction.response.send_message(f"Erro ao voltar para música anterior: {e}", ephemeral=True)
         else:
-            await interaction.response.send_message("Não há música anterior para voltar.", ephemeral=True)
-    
+            await interaction.response.send_message("Não há música anterior no histórico para voltar.", ephemeral=True)    
     @nextcord.ui.button(emoji=EMOJIS["pause"], style=nextcord.ButtonStyle.secondary, row=0)
     async def pause(self, button: nextcord.ui.Button, interaction: Interaction):
         """Pausa ou retoma a música atual."""
@@ -180,47 +210,46 @@ class MusicControls(nextcord.ui.View):
         await interaction.response.send_message(message, ephemeral=True)
         await self.cog.update_now_playing_message(self.player)
     
-    @nextcord.ui.button(emoji=EMOJIS["stop"], style=nextcord.ButtonStyle.danger, row=1)
+    @n    @nextcord.ui.button(emoji=EMOJIS["stop"], style=nextcord.ButtonStyle.danger, row=1)
     async def stop(self, button: nextcord.ui.Button, interaction: Interaction):
-        """Para a reprodução e limpa a fila."""
+        """Para a reprodução, limpa a fila e desconecta o bot."""
         guild_id = interaction.guild_id
         
-        # Limpa a fila personalizada
+        # Verifica se o player existe e está conectado
+        if not self.player or not self.player.connected:
+            await interaction.response.send_message("O bot não está conectado ou tocando música.", ephemeral=True)
+            return
+            
+        logger.info(f"Comando stop recebido para guild {guild_id}")
+        
+        # Limpa a fila personalizada primeiro
         if guild_id in self.cog.queues:
             self.cog.queues[guild_id].clear()
+            logger.debug(f"Fila limpa para guild {guild_id}")
             
-        await self.player.stop()  # Para a música atual
+        # Para a música atual (isso deve disparar on_track_end)
+        await self.player.stop()
+        logger.debug(f"Player.stop() chamado para guild {guild_id}")
         
+        # Desconecta do canal de voz
         try:
-            await self.player.disconnect(force=True)  # Desconecta do canal de voz
+            # force=True garante a desconexão imediata.
+            await self.player.disconnect(force=True)
+            logger.info(f"Player desconectado (via botão stop) para guild {guild_id}")
+        except mafic.errors.MaficException as e:
+            logger.error(f"Erro específico do Mafic ao desconectar player (stop) para guild {guild_id}: {e}", exc_info=True)
+            # Continua mesmo se a desconexão falhar, para tentar limpar estados
         except Exception as e:
-            logger.error(f"Erro ao desconectar player para guild {guild_id}: {e}")
+            logger.error(f"Erro geral ao desconectar player (stop) para guild {guild_id}: {e}", exc_info=True)
+            # Continua mesmo se a desconexão falhar
 
-        # Remove o player da lista
-        if guild_id in self.cog.players:
-            del self.cog.players[guild_id]
-        
-        # Limpa o dicionário de requesters
-        if guild_id in self.cog.track_requesters:
-            del self.cog.track_requesters[guild_id]
-        
-        # Limpa a fila personalizada
-        if guild_id in self.cog.queues:
-            del self.cog.queues[guild_id]
+        # Limpa os estados da cog para esta guild explicitamente
+        # Isso é uma garantia extra, caso o listener on_voice_state_update falhe ou atrase.
+        self.cog.cleanup_guild_states(guild_id)
+        logger.info(f"Estados da cog limpos (via botão stop) para guild {guild_id}")
             
-        # Limpa o estado de loop
-        if guild_id in self.cog.loop_states:
-            del self.cog.loop_states[guild_id]
-            
-        # Limpa a última música tocada
-        if guild_id in self.cog.last_tracks:
-            del self.cog.last_tracks[guild_id]
-            
-        # Limpa a mensagem de "agora tocando"
-        if guild_id in self.cog.now_playing_messages:
-            del self.cog.now_playing_messages[guild_id]
-            
-        await interaction.response.send_message(f"{EMOJIS['stop']} Reprodução parada e fila limpa!", ephemeral=True)
+        await interaction.response.send_message(f"{EMOJIS['stop']} Reprodução parada, fila limpa e bot desconectado!", ephemeral=True)
+        # A mensagem 'agora tocando' deve ser limpa/atualizada pelo cleanup_guild_states ou on_voice_state_updatel=True)
     
     @nextcord.ui.button(emoji=EMOJIS["playlist"], style=nextcord.ButtonStyle.secondary, row=1)
     async def playlist(self, button: nextcord.ui.Button, interaction: Interaction):
@@ -363,31 +392,48 @@ class Musica(commands.Cog):
         self.bot.loop.create_task(self.initialize_mafic())
         
     def init_spotify_client(self):
-        """Inicializa o cliente do Spotify."""
-        try:
-            # Tenta obter as credenciais do ambiente
-            client_id = os.getenv("SPOTIFY_CLIENT_ID")
-            client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
-            
-            # Se não encontrar no ambiente, tenta carregar de um arquivo de configuração
-            if not client_id or not client_secret:
-                config_dir = os.path.dirname(os.path.dirname(__file__))
-                config_path = os.path.join(config_dir, "config.json")
+        """Inicializa o cliente do Spotify, priorizando variáveis de ambiente."""
+        client_id = os.getenv("SPOTIFY_CLIENT_ID")
+        client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+        
+        # Se não encontrar no ambiente, tenta carregar de um arquivo config.json na raiz do projeto
+        # IMPORTANTE: Certifique-se de que config.json está no seu .gitignore!
+        if not client_id or not client_secret:
+            logger.info("Credenciais do Spotify não encontradas no ambiente. Tentando carregar de config.json...")
+            try:
+                # Assume que o script está em /cogs/Musica.py, então vai duas pastas acima para a raiz
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                config_path = os.path.join(base_dir, "config.json")
                 
                 if os.path.exists(config_path):
-                    try:
-                         with open(config_path, "r") as f:
-                            config = json.load(f)
-                            
-                        if "spotify" in config:
-                            client_id = config["spotify"].get("client_id")
-                            client_secret = config["spotify"].get("client_secret")
-                    except Exception as e:
-                        logger.error(f"Erro ao carregar configuração do Spotify: {e}")
-            
-            # Se encontrou as credenciais, inicializa o cliente
-            if client_id and client_secret:
-                self.spotify = spotipy.Spotify(
+                    with open(config_path, "r") as f:
+                        config = json.load(f)
+                    spotify_config = config.get("spotify", {})
+                    client_id = spotify_config.get("client_id")
+                    client_secret = spotify_config.get("client_secret")
+                    if client_id and client_secret:
+                        logger.info("Credenciais do Spotify carregadas de config.json.")
+                    else:
+                        logger.warning("Credenciais do Spotify não encontradas ou incompletas em config.json.")
+                else:
+                    logger.warning(f"Arquivo config.json não encontrado em {config_path}.")
+            except json.JSONDecodeError:
+                logger.error(f"Erro ao decodificar {config_path}. Verifique se o JSON é válido.")
+            except Exception as e:
+                logger.error(f"Erro inesperado ao carregar config.json: {e}", exc_info=True)
+
+        # Inicializa o cliente se as credenciais foram encontradas
+        if client_id and client_secret:
+            try:
+                auth_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
+                self.spotify = spotipy.Spotify(auth_manager=auth_manager)
+                logger.info("Cliente Spotipy inicializado com sucesso.")
+            except Exception as e:
+                logger.error(f"Erro ao inicializar cliente Spotipy: {e}", exc_info=True)
+                self.spotify = None
+        else:
+            logger.warning("Credenciais do Spotify não configuradas. Funcionalidades do Spotify estarão desativadas.")
+            self.spotify = None
                     auth_manager=SpotifyClientCredentials(
                         client_id=client_id,
                         client_secret=client_secret
@@ -400,30 +446,43 @@ class Musica(commands.Cog):
         except Exception as e:
             self.spotify = None
             logger.error(f"Erro ao inicializar cliente do Spotify: {e}")
-            
-    async def initialize_mafic(self):
-        """Inicializa o pool do Mafic quando o bot estiver pronto."""
+                async def initialize_mafic(self):
+        """Inicializa o pool do Mafic quando o bot estiver pronto, usando variáveis de ambiente."""
         await self.bot.wait_until_ready()
         
+        # Carrega configurações do Lavalink do ambiente ou usa padrões
+        lavalink_host = os.getenv("LAVALINK_HOST", "127.0.0.1")
+        lavalink_port_str = os.getenv("LAVALINK_PORT", "2333")
+        lavalink_password = os.getenv("LAVALINK_PASSWORD", "youshallnotpass")
+        lavalink_label = os.getenv("LAVALINK_LABEL", "MAIN")
+        lavalink_secure_str = os.getenv("LAVALINK_SECURE", "False")
+        
         try:
-            # Cria o pool do Mafic com os nós do Lavalink
-            # Você pode adicionar mais nós conforme necessário
+            lavalink_port = int(lavalink_port_str)
+        except ValueError:
+            logger.error(f"Valor inválido para LAVALINK_PORT: 	{lavalink_port_str}. Usando padrão 2333.")
+            lavalink_port = 2333
+            
+        lavalink_secure = lavalink_secure_str.lower() in ["true", "1", "yes"]
+        
+        logger.info(f"Tentando conectar ao nó Lavalink: Host={lavalink_host}, Port={lavalink_port}, Label={lavalink_label}, Secure={lavalink_secure}")
+        
+        try:
+            # Cria o pool do Mafic
             self.bot.mafic_pool = mafic.NodePool(self.bot)
             
-            # Adiciona o nó do Lavalink
-            # Substitua host, port, password pelos valores corretos do seu servidor Lavalink
+            # Adiciona o nó do Lavalink com configurações do ambiente
             await self.bot.mafic_pool.create_node(
-                host="127.0.0.1",
-                port=2333,
-                label="MAIN",
-                password="youshallnotpass",
-                secure=False
+                host=lavalink_host,
+                port=lavalink_port,
+                label=lavalink_label,
+                password=lavalink_password,
+                secure=lavalink_secure
             )
             
-            logger.info("Pool Mafic inicializado com sucesso.")
+            logger.info(f"Nó Lavalink 	{lavalink_label} adicionado ao pool Mafic com sucesso.")
         except Exception as e:
-            logger.error(f"Erro ao inicializar o pool Mafic: {e}", exc_info=True)
-            
+            logger.error(f"Falha ao inicializar o pool Mafic ou conectar ao nó Lavalink: {e}", exc_info=True)           
     def get_queue(self, guild_id: int) -> List[mafic.Track]:
         """Obtém a fila personalizada para um servidor."""
         if guild_id not in self.queues:
@@ -615,8 +674,13 @@ class Musica(commands.Cog):
                 )
                 
                 await message.edit(embed=embed)
-        except Exception as e:
-            logger.error(f"Erro ao atualizar mensagem de 'agora tocando': {e}")
+            except nextcord.NotFound:
+                logger.warning(f"Mensagem de 'agora tocando' não encontrada para guild {guild_id}. Removendo referência.")
+                del self.now_playing_messages[guild_id]
+            except nextcord.Forbidden:
+                logger.error(f"Sem permissão para editar a mensagem de 'agora tocando' para guild {guild_id}.")
+            except Exception as e:
+                logger.error(f"Erro inesperado ao atualizar mensagem de 'agora tocando': {e}", exc_info=True)
     
     async def process_spotify_url(self, interaction: Interaction, url: str):
         """Processa um URL do Spotify."""
@@ -691,9 +755,13 @@ class Musica(commands.Cog):
                 
                 # Armazena o resultado em cache
                 self.spotify_cache.set(cache_key, tracks_info)
-            except Exception as e:
+            except spotipy.SpotifyException as e: # Captura exceção específica do Spotipy
                 logger.error(f"Erro ao buscar informações do Spotify: {e}", exc_info=True)
                 await interaction.followup.send(f"Erro ao buscar informações do Spotify: {e}", ephemeral=True)
+                return
+            except Exception as e: # Captura outras exceções inesperadas
+                logger.error(f"Erro inesperado ao processar Spotify: {e}", exc_info=True)
+                await interaction.followup.send("Ocorreu um erro inesperado ao processar a solicitação do Spotify.", ephemeral=True)
                 return
         
         # Verifica se encontrou faixas
@@ -740,15 +808,15 @@ class Musica(commands.Cog):
         # Cria o painel estilizado ANTES de adicionar à fila
         if player.current:
             # Se já está tocando algo, atualizamos o painel existente
-            await self.update_now_playing_message(player)
-        
-        # Adiciona as faixas à fila
-        added_tracks = 0
-        for track_info in tracks_info:
-            # Cria uma consulta para o YouTube com o nome da faixa e artistas
-            artists_str = ", ".join(track_info["artists"])
-            search_query = f"ytsearch:{track_info['name']} {artists_str}"
-            
+            await self.update_now_playing_mess            # Adiciona as faixas à fila
+            added_tracks = 0
+            for track_info in tracks_info:
+                # Cria uma consulta para o YouTube com o nome da faixa e artistas
+                # ATENÇÃO: Usar ytsearch para faixas do Spotify é uma aproximação e pode
+                # resultar em faixas incorretas sendo tocadas, especialmente para remixes
+                # ou versões diferentes. Não há garantia de que será a mesma faixa do Spotify.
+                artists_str = ", ".join(track_info["artists"])
+                search_query = f"ytsearch:{track_info['name']} {artists_str}"          
             try:
                 # Busca a faixa no YouTube
                 search_results = await player.fetch_tracks(search_query)
@@ -1691,3 +1759,72 @@ class Musica(commands.Cog):
 
 def setup(bot: commands.Bot):
     bot.add_cog(Musica(bot))
+
+
+    def cleanup_guild_states(self, guild_id: int):
+        """Limpa todos os estados armazenados para uma guild específica."""
+        logger.debug(f"Iniciando limpeza de estados para guild {guild_id}")
+        
+        # Remove o player da lista
+        if guild_id in self.players:
+            del self.players[guild_id]
+            logger.debug(f"Player removido para guild {guild_id}")
+        
+        # Limpa o dicionário de requesters
+        if guild_id in self.track_requesters:
+            del self.track_requesters[guild_id]
+            logger.debug(f"Requesters limpos para guild {guild_id}")
+        
+        # Limpa a fila personalizada
+        if guild_id in self.queues:
+            del self.queues[guild_id]
+            logger.debug(f"Fila limpa para guild {guild_id}")
+            
+        # Limpa o estado de loop
+        if guild_id in self.loop_states:
+            del self.loop_states[guild_id]
+            logger.debug(f"Estado de loop limpo para guild {guild_id}")
+            
+        # Limpa o estado de autoplay
+        if guild_id in self.autoplay_states:
+            del self.autoplay_states[guild_id]
+            logger.debug(f"Estado de autoplay limpo para guild {guild_id}")
+            
+        # Limpa a última música tocada
+        if guild_id in self.last_tracks:
+            del self.last_tracks[guild_id]
+            logger.debug(f"Histórico de última música limpo para guild {guild_id}")
+            
+        # Limpa a mensagem de "agora tocando"
+        if guild_id in self.now_playing_messages:
+            try:
+                msg_id, channel_id = self.now_playing_messages[guild_id]
+                # Não tenta editar a mensagem aqui, apenas remove a referência
+                # A edição pode ser feita no on_voice_state_update ou no comando stop
+            except Exception as e:
+                logger.error(f"Erro ao processar referência da mensagem 'agora tocando' durante limpeza para guild {guild_id}: {e}")
+            finally:
+                del self.now_playing_messages[guild_id]
+                logger.debug(f"Referência da mensagem 'agora tocando' limpa para guild {guild_id}")
+                
+        logger.info(f"Limpeza de estados concluída para guild {guild_id}")
+
+    # --- Cog Unload --- 
+    async def cog_unload(self):
+        """Limpa recursos quando a cog é descarregada."""
+        logger.info("Descarregando a cog Musica...")
+        # Cria uma cópia das chaves dos players para iterar, pois o dicionário será modificado
+        active_guild_ids = list(self.players.keys())
+        
+        for guild_id in active_guild_ids:
+            player = self.players.get(guild_id)
+            if player and player.connected:
+                try:
+                    logger.info(f"Desconectando player da guild {guild_id} durante o unload da cog.")
+                    await player.disconnect(force=True)
+                except Exception as e:
+                    logger.error(f"Erro ao desconectar player da guild {guild_id} durante o unload: {e}", exc_info=True)
+            # Limpa os estados independentemente de ter conseguido desconectar
+            self.cleanup_guild_states(guild_id)
+            
+        logger.info("Cog Musica descarregada com sucesso.")
